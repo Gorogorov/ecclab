@@ -68,6 +68,14 @@ dec_bpsk(
    int xd[]
 );
 
+int
+dec_bpsk_flipping(
+   void *cdc,
+   double c_out[],
+   int xd[],
+   int Ti
+);
+
 void
 cdc_close(
    void *cdc

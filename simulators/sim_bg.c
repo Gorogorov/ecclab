@@ -102,11 +102,11 @@ char fixedR_token[] = "fixed_R";
 //-----------------------------------------------------------------------------
 // Functions.
 
-double db2val(double x) {
+static double db2val(double x) {
    return exp(log(10.0) * x / 10.0);
 }
 
-void set_rnd_seed(long s) {
+static void set_rnd_seed(long s) {
 #ifdef USE_STDLIB_RND
    srand((unsigned)s);
 #else
@@ -115,7 +115,7 @@ void set_rnd_seed(long s) {
 }
 
 /* Pauses for a specified number of milliseconds. */
-void sleep( clock_t wait )
+static void sleep( clock_t wait )
 {
    clock_t goal;
    goal = wait + clock();
@@ -123,31 +123,9 @@ void sleep( clock_t wait )
       ;
 }
 
-// Add Gaussian noise.
-void add_noise(
-   double y[],
-   int n, // Length of y[] (must be even!).
-   double sg // Standard deviation (sigma).
-)
-{
-   double v1, v2, r;
-   int i = 0;
-
-   while (i < n) {
-      do {
-         v1 = 2.0 * RND - 1.0;
-         v2 = 2.0 * RND - 1.0;
-         r = v1 * v1 + v2 * v2;
-      } while (r >= 1.0);
-      r = sqrt((-2.0 * log(r)) / r);
-      y[i++] += v1 * r * sg;
-      y[i++] += v2 * r * sg;
-   }
-}
-
-// Copy and add Gaussian noise.
-void copy_add_noise(
-   double ys[],
+// Copy and add Gaussian noise using Marsaglia polar method.
+static void copy_add_noise(
+   double const ys[],
    int n, // Length of y[] (must be even!).
    double sg, // Standard deviation (sigma).
    double yd[]
@@ -358,17 +336,51 @@ int sim_run(
          // c_out <-- c_in + noise.
          copy_add_noise(c_in, c_n, noise_sg, c_out);
 
+         /*FILE* file2 = fopen("./noise.csv", "r");
+         int cntt = 0;
+         double rrr2 = 0;
+         char tr;
+         fscanf(file2, "%c", &tr);
+
+         while (!feof (file2))
+            {  
+               fscanf (file2, "%lf", &rrr2);  
+               c_out[cntt] = rrr2;
+               cntt++;
+            }
+         fclose (file2);*/
+
          // Decode.
+
+         #ifdef FLIPPING
+         if (dec_bpsk_flipping(sim->dc_inst, c_out, x_dec, 32)) {
+            err_msg("sim_run(): Error while decoding.");
+            return -1;
+         }
+         #endif // FLIPPING
+
+         #ifndef FLIPPING
          if (dec_bpsk(sim->dc_inst, c_out, x_dec)) {
             err_msg("sim_run(): Error while decoding.");
             return -1;
          }
+         #endif // FLIPPING
 
          // Count the number of incorrect information bits.
          en = 0;
          for (i = 0; i < c_k; i++) if (x_dec[i] != x[i]) en++;
          // Adjust error counters.
          if (en) {
+            /*printf("a\n");
+            for (int www = 0; www < 1024; www++){
+               printf("%f\n", c_out[www]);
+            }
+            printf("\n");*/
+            /*printf("decoded:\n");
+            for (int www = 0; www < c_k; www++){
+               printf("%d", x_dec[www]);
+            }
+            printf("\n");*/
             sim->en_bit[csnrn] += en;
             sim->en_bl[csnrn]++;
          }

@@ -56,6 +56,11 @@ typedef struct {
 } decoder_type;
 
 
+typedef struct {
+  double l;
+  double *llrs;
+} lv;
+
 //-----------------------------------------------------------------------------
 // Prototypes.
 
@@ -66,7 +71,9 @@ polar_dec(
   decoder_type *dd, // Decoder instance data.
   double *y_in, // Decoder input.
   int *x_dec, // Decoded information sequence.
-  double *s_dec // Metric of x_dec (set NULL, if not needed).
+  double *s_dec, // Metric of x_dec (set NULL, if not needed).
+  lv *lv_array, // Comparator value + llrs.
+  int T // Index of the flipping bit.
 );
 
 #endif // #ifndef POLAR_SCL_INNER_H

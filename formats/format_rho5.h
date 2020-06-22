@@ -28,7 +28,7 @@
 //-----------------------------------------------------------------------------
 // Includes.
 
-#include "std_defs.h"
+#include "../common/std_defs.h"
 
 //-----------------------------------------------------------------------------
 // Defines
@@ -38,7 +38,7 @@
 #define YLDEC0 1.0
 #define YLDEC1 (-1.0)
 
-#define RHO2LOGP0(e) ((e) - log(1.0 + exp(e)))
+#define RHO2LOGP0(e) (-log(1.0 + exp(-(e))))
 #define RHO2LOGP1(e) (-log(1.0 + exp(e)))
 
 // True if estimate votes for 0.
@@ -69,20 +69,15 @@
 // EST0_TO_LNP1(y) - EST0_TO_LNP0(y).
 #define EST0_ADD_LNP1_SUB_LNP0(y) (-(y))
 
-#define XOR_EST(y1, y2) ((ABSF(y1) < ABSF(y2)) ? (((y1) * (y2) > 0.0) ? ABSF(y1) : -ABSF(y1)) : \
-   (((y1) * (y2) > 0.0) ? ABSF(y2) : -ABSF(y2)))
+#define SGN(e) (1 - 2 * (e < 0))
 
-#define VXOR_EST(yp1, yp2, yp3, n) { \
-   register int i; \
-   for (i = 0; i < n; i++) yp3[i] = XOR_EST(yp1[i], yp2[i]); \
-}
+#define FMIN(y1, y2) (ABSF(y1) < ABSF(y2) ? ABSF(y1) : ABSF(y2)) 
+
+//#define XOR_EST(y1, y2) ((ABSF(y1) < ABSF(y2)) ? (((y1) * (y2) > 0.0) ? ABSF(y1) : -ABSF(y1)) : \
+//   (((y1) * (y2) > 0.0) ? ABSF(y2) : -ABSF(y2)))
+#define XOR_EST(y1, y2) SGN(y1) * SGN(y2) * FMIN(y1, y2)
 
 #define ADD_EST(y1, y2, y3) {y3 = (y1) + (y2);}
-
-#define VADD_EST(yp1, yp2, yp3, n) { \
-   register int i; \
-   for (i = 0; i < n; i++) ADD_EST(yp1[i], yp2[i], yp3[i]); \
-}
 
 #define XOR_YLDEC(y1, y2) ((y1) * (y2))
 

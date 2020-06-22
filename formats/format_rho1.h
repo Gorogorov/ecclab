@@ -31,7 +31,7 @@
 #define YLDEC0 1.0
 #define YLDEC1 (-1.0)
 
-#define RHO1LOGP0(e) ((e) - log(1.0 + exp(e)))
+#define RHO1LOGP0(e) (-log(1.0 + exp(-(e))))
 #define RHO1LOGP1(e) (-log(1.0 + exp(e)))
 
 // True if estimate votes for 0.
@@ -68,17 +68,7 @@
 //#define XOR_EST_MM(y1, y2) ((y1) + (y2))
 //#define XOR_EST(y1, y2)
 
-#define VXOR_EST(yp1, yp2, yp3, n) { \
-   register int i; \
-   for (i = 0; i < n; i++) yp3[i] = XOR_EST(yp1[i], yp2[i]); \
-}
-
 #define ADD_EST(y1, y2, y3) {y3 = (y1) + (y2);}
-
-#define VADD_EST(yp1, yp2, yp3, n) { \
-   register int i; \
-   for (i = 0; i < n; i++) ADD_EST(yp1[i], yp2[i], yp3[i]); \
-}
 
 #define XOR_YLDEC(y1, y2) ((y1) * (y2))
 

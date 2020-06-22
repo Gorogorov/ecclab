@@ -26,6 +26,7 @@
 
 #include <stdlib.h>
 #include "srm_utils.h"
+#include <stdio.h>
 #include "../interfaces/ui_utils.h"
 
 //-----------------------------------------------------------------------------

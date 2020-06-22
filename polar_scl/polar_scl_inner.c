@@ -32,6 +32,8 @@
 #include <stdio.h>
 #endif
 
+
+#include <stdio.h> // DELETE
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -91,6 +93,10 @@ xlist_item *next_xle_ptr; // pointer to the next available xlist element
 
 xlitem *xtmp;
 
+#ifdef FLIPPING
+lv *lv_array_cur;
+int fbit;
+#endif // FLIPPING
 
 //-----------------------------------------------------------------------------
 // Functions.
@@ -104,13 +110,16 @@ void vgetx(int listInd, xlitem *res_x, int n) {
   }
 }
 
-int branch(int i0, xlist_item *xle0) {
+int branch(int i0, xlist_item *xle0, int ret_list) {
   int i1 = frind[frindp++];
   parent[i1] = i0;
   lind2xl[i1] = xle0;
   lorder[cur_lsiz++] = i1;
   slist[i1] = slist[i0];
   plist[i1] = plist[i0];
+#ifdef FLIPPING 
+  memcpy(lv_array_cur[i1].llrs, lv_array_cur[i0].llrs, node_counter * sizeof(double));
+#endif // FLIPPING
   return i1;
 }
 
@@ -203,9 +212,10 @@ void polar0_branch(
 
     cur_ind0 = lorder[i];
     parent[cur_ind0] = -1;
-    cur_ind1 = branch(cur_ind0, lind2xl[cur_ind0]);
+    cur_ind1 = branch(cur_ind0, lind2xl[cur_ind0], dd->ret_list);
 
     yp = YLISTP(cur_ind0, 0);
+    //printf("1 %f\n", yp[0]);
     if (CHECK_EST0(yp[0])) {
       y = yp[0];
       x = 0;
@@ -220,6 +230,14 @@ void polar0_branch(
 
     PUSHX(1 - x, cur_ind1);
     slist[cur_ind1] += EST0_TO_LNP1(y);
+    //printf("%f %f %f %f\n", yp[0], EST0_TO_LNP0(y), -yp[0], EST0_TO_LNP1(y));
+
+    
+#ifdef FLIPPING
+      // TODO: DIFFERENT FORMATS
+      lv_array_cur[cur_ind0].llrs[node_counter] = -yp[0];
+      lv_array_cur[cur_ind1].llrs[node_counter] = -yp[0];
+#endif // FLIPPING
   }
 
 #ifdef DBG
@@ -237,10 +255,21 @@ void polar0_branch(
     cur_ind0 = parent[cur_ind1];
     if (cur_ind0 >= 0) {
       memcpy(YLISTPP(cur_ind1, 0), YLISTPP(cur_ind0, 0), dd->c_m * sizeof(ylitem *));
+      //memcpy(lv_array_cur[cur_ind1].llrs, lv_array_cur[cur_ind0].llrs, node_counter * sizeof(double));
     }
     x = GETX(cur_ind1);
     yp = YLISTP(cur_ind1, 0) = YLIST_POP(0);
     yp[0] = x ? YLDEC1 : YLDEC0;
+#ifdef FLIPPING
+    if (fbit == node_counter) {
+      if (yp[0] == YLDEC1)
+        yp[0] = YLDEC0;
+      else
+        yp[0] = YLDEC1;
+      GETX(cur_ind1) = 1 - x;
+      //printf("%d %d\n", x, GETX(cur_ind1));
+    }
+#endif // FLIPPING
   }
 
 #ifdef DBG
@@ -265,6 +294,10 @@ void polar0_skip(
     cur_ind0 = lorder[i];
     yp = YLISTP(cur_ind0, 0);
     slist[cur_ind0] += EST_TO_LNP0(yp[0]);
+    //printf("1 %lf\n", yp[0]);
+#ifdef FLIPPING
+    lv_array_cur[cur_ind0].llrs[node_counter] = -yp[0];
+#endif // FLIPPING
     yp = YLISTP(cur_ind0, 0) = YLIST_POP(0);
     yp[0] = YLDEC0;
   }
@@ -309,6 +342,14 @@ void polar_dec_inner(
      yp2 = yp1 + n2;
      vp = YLISTP(cur_ind0, m - 1) = YLIST_POP(m - 1);
      VXOR_EST(yp1, yp2, vp, n2);
+     /*if (n2 == 1) vp[0] = XOR_EST(yp1[0], yp2[0]);
+     else {
+        for (j = 0; j < n2 / 2; j++) vp[j] = XOR_EST(yp1[2*j], yp1[2*j + 1]);
+        for (j = 0; j < n2 / 2; j++) vp[n2/2 + j] = XOR_EST(yp2[2*j], yp2[2*j + 1]);
+     }*/
+     /*printf("\nN = %d\n", n2);
+     for (j = 0; j < n2; j++) printf("%f ", vp[j]);
+     printf("\n\n");*/
   }
 
   polar_dec_inner(dd, m - 1);
@@ -330,6 +371,23 @@ void polar_dec_inner(
         y1 = EST_XOR_YLDEC(yp1[j], vp[j]); // y1 <-- y_1[j] xor v[j].
         ADD_EST(y1, yp2[j], up[j]); // y_u <-- y1 + y_2[j];
      }
+     /*if (n2 == 1) {
+       y1 = EST_XOR_YLDEC(yp1[0], vp[0]);
+       ADD_EST(y1, yp2[0], up[0]);
+     }
+     else {
+      for (j = 0; j < n2 / 2; j++) {
+        y1 = EST_XOR_YLDEC(yp1[2*j], vp[j]);
+        ADD_EST(y1, yp1[2*j + 1], up[j]);
+      }
+      for (j = 0; j < n2 / 2; j++) {
+        y1 = EST_XOR_YLDEC(yp2[2*j], vp[j + n2/2]);
+        ADD_EST(y1, yp2[2*j + 1], up[j + n2/2]);
+      }
+     }*/
+     /*printf("\nN = %d\n", n2);
+     for (j = 0; j < n2; j++) printf("%f ", up[j]);
+     printf("\n\n");*/
   }
 
 #ifdef DBG2
@@ -344,15 +402,33 @@ void polar_dec_inner(
 
   // y_dec <-- (u xor v | u).
   for (i = 0; i < cur_lsiz; i++) {
-     cur_ind0 = lorder[i];
-     vp = YLISTP(cur_ind0, m);
-     yp1 = YLISTP(cur_ind0, m) = YLIST_POP(m);
-     yp2 = yp1 + n2;
-     up = YLISTP(cur_ind0, m - 1);
-     for (j = 0; j < n2; j++) {
-        yp1[j] = XOR_YLDEC(vp[j], up[j]);
-        yp2[j] = up[j];
-     }
+    cur_ind0 = lorder[i];
+    vp = YLISTP(cur_ind0, m);
+    yp1 = YLISTP(cur_ind0, m) = YLIST_POP(m);
+    yp2 = yp1 + n2;
+    up = YLISTP(cur_ind0, m - 1);
+    for (j = 0; j < n2; j++) {
+      yp1[j] = XOR_YLDEC(vp[j], up[j]);
+      yp2[j] = up[j];
+    }
+    /*if (n2 == 1) {
+      yp1[0] = XOR_YLDEC(vp[0], up[0]);
+      yp2[0] = up[0];
+    }
+    else {
+      for (j = 0; j < n2/2; j++) {
+        yp1[2*j] = XOR_YLDEC(vp[j], up[j]);
+        yp1[2*j + 1] = up[j];
+      }
+      for (j = 0; j < n2/2; j++) {
+        yp2[2*j] = XOR_YLDEC(vp[n2/2 + j], up[n2/2 + j]);
+        yp2[2*j + 1] = up[n2/2 + j];
+      }
+    }*/
+    /*for (j = 0; j < n2; j++) {
+      printf("%f %f ", yp1[j], yp2[j]);
+    }
+    printf("\n");*/
   }
 
   YLIST_RESET(m - 1);
@@ -364,7 +440,9 @@ polar_dec(
    decoder_type *dd, // Decoder instance data.
    double *y_input, // Decoder input.
    int *x_dec, // Decoded information sequence.
-   double *s_dec // Metric of x_dec (set NULL, if not needed).
+   double *s_dec, // Metric of x_dec (set NULL, if not needed).
+   lv *lv_array, // Comparator value + llrs.
+   int Ti // Index of the flipping bit.
 )
 {
   int i, j, i1;
@@ -438,6 +516,16 @@ polar_dec(
   xtmp = (xlitem *)mem_buf_ptr;
   mem_buf_ptr += c_n * sizeof(xlitem);
 
+#ifdef FLIPPING
+  lv_array_cur = (lv *)mem_buf_ptr;
+  mem_buf_ptr += flsiz * sizeof(lv);
+  for (i = 0; i < flsiz; i++) {
+      lv_array_cur[i].llrs = (double *)mem_buf_ptr;
+      mem_buf_ptr += c_n * sizeof(double);
+  }
+  fbit = Ti;
+#endif // FLIPPING
+
 #ifdef DBG2
   printf("\nAssigned buffer size: %ld\n", mem_buf_ptr - dd->mem_buf);
 #endif
@@ -457,6 +545,8 @@ polar_dec(
   // Branch with permutations at (c_m, c_m).
   // List size is going to be dd->p_num.
   // All path metrics are 0 so far.
+  //for (i = 0; i < 1024; i++) printf("%f ", y_in[i]);
+  //printf("\n");
   for (i = 0; i < dd->p_num; i++) {
     slist[i] = 0.0;
     lorder[i] = i;
@@ -464,9 +554,15 @@ polar_dec(
     p1 = dd->pyarr + c_n * i;
     vp = YLISTP(i, c_m - 1) = YLIST_POP(c_m - 1);
     // TODO: Permutations are not usable with general Polar, but let's leave it as it is for now.
-    for (j = 0; j < n2; j++) vp[j] = XOR_EST(y_in[p1[j]], y_in[p1[j + n2]]);
+    for (j = 0; j < n2; j++) {
+      //vp[j] = XOR_EST(y_in[p1[2*j]], y_in[p1[2*j + 1]]);
+      vp[j] = XOR_EST(y_in[p1[j]], y_in[p1[j + n2]]);
+    }
+    /*for (j = 0; j < n2; j++) printf("%f ", vp[j]);
+    printf("\n");*/
     plist[i] = i;
   }
+
   cur_lsiz = frindp = dd->p_num;
   next_xle_ptr = xlist + 1;
   xlist[0].x = 0;
@@ -494,6 +590,8 @@ polar_dec(
     for (j = 0; j < n2; j++) {
       y1 = EST_XOR_YLDEC(y_in[p1[j]], vp[j]); // y1 <-- y_1[j] xor v[j].
       ADD_EST(y1, y_in[p1[j + n2]], up[j]); // y_u <-- y1 + y_2[j];
+      //y1 = EST_XOR_YLDEC(y_in[p1[2*j]], vp[j]); // y1 <-- y_1[j] xor v[j].
+      //ADD_EST(y1, y_in[p1[2*j + 1]], up[j]); // y_u <-- y1 + y_2[j];
     }
   }
 
@@ -517,6 +615,11 @@ polar_dec(
       p1 = dd->pxarr + dd->c_k * plist[lorder[i]];
       xp = x_dec + i * c_k;
       for (j = 0; j < c_k; j++) xp[p1[j]] = xtmp[j];
+#ifdef FLIPPING
+      // TODO: Permutations => update lv_array_cur.llrs
+      memcpy(lv_array[i].llrs, lv_array_cur[lorder[i]].llrs, c_n * sizeof(double));
+      lv_array[i].l = slist[lorder[i]];
+#endif // FLIPPING
     }
 
   }

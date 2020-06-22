@@ -37,7 +37,7 @@
 //#include "format_eps3.h"
 //#include "format_eps4.h" // eps., approx.
 //#include "format_eps4h.h" // eps., approx., hard input.
-#include "format_eps5.h" // eps, exact, clipping.
+//#include "format_eps5.h" // eps, exact, clipping.
 //#include "format_eps5h.h" // eps, exact, hard input, clipping.
 //#include "format_eps6.h"
 //#include "format_eps6a.h"
@@ -50,7 +50,7 @@
 //#include "format_rho3.h"
 //#include "format_rho3h.h"
 //#include "format_rho4.h"
-//#include "format_rho5.h" // LLR, min/sum.
+#include "format_rho5.h" // LLR, min/sum.
 //#include "format_rho6.h"
 //#include "format_rho6a.h"
 //#include "format_rho7.h"
@@ -151,6 +151,23 @@
    } \
 }
 #endif // if FORMAT_Q2
+
+// Higher level macros.
+
+#define VXOR_EST(yp1, yp2, yp3, n) { \
+   register int i; \
+   for (i = 0; i < n; i++) yp3[i] = XOR_EST(yp1[i], yp2[i]); \
+}
+
+#define VADD_EST(yp1, yp2, yp3, n) { \
+   register int i; \
+   for (i = 0; i < n; i++) ADD_EST(yp1[i], yp2[i], yp3[i]); \
+}
+
+#define VADD_INV_EST(yp1, yp2, yp3, n) { \
+   register int i; \
+   for (i = 0; i < n; i++) ADD_EST(INV_EST(yp1[i]), yp2[i], yp3[i]); \
+}
 
 //-----------------------------------------------------------------------------
 // Typedefs.
