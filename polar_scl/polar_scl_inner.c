@@ -46,6 +46,7 @@
 // Internal defines.
 
 #define NEAR_ZERO (1e-300)
+#define INF (1e10)
 
 // List access defines.
 #define GETX(i) (lind2xl[i]->x)
@@ -98,6 +99,13 @@ lv *lv_array_cur;
 int fbit;
 #endif // FLIPPING
 
+#ifdef LISTFLIPPING
+double *Malpha_cur;
+int fstep;
+slitem *slist_alpha;
+double alpha_cur;
+#endif // LISTFLIPPING
+
 //-----------------------------------------------------------------------------
 // Functions.
 
@@ -117,6 +125,9 @@ int branch(int i0, xlist_item *xle0, int ret_list) {
   lorder[cur_lsiz++] = i1;
   slist[i1] = slist[i0];
   plist[i1] = plist[i0];
+#ifdef LISTFLIPPING
+  slist_alpha[i1] = slist_alpha[i0];
+#endif // LISTFLIPPING
 #ifdef FLIPPING 
   memcpy(lv_array_cur[i1].llrs, lv_array_cur[i0].llrs, node_counter * sizeof(double));
 #endif // FLIPPING
@@ -185,6 +196,24 @@ void qpartition(int *v, int len, int k) {
   else qpartition(v + st, len - st, k - st);
 }
 
+/*#ifdef LISTFLIPPING
+void qpartition_reverse(int *v, int len, int k) {
+  int i, st, tmp;
+
+  for (st = i = 0; i < len - 1; i++) {
+    if (slist[v[i]] > slist[v[len - 1]]) continue;
+    SWAP(i, st);
+    st++;
+  }
+
+  SWAP(len - 1, st);
+
+  if (k == st) return;
+  if (st > k) qpartition(v, st, k);
+  else qpartition(v + st, len - st, k - st);
+}
+#endif // LISTFLIPPING*/
+
 // For qsort().
 static int lst_comp(const void *i, const void *j)
 {
@@ -230,24 +259,64 @@ void polar0_branch(
 
     PUSHX(1 - x, cur_ind1);
     slist[cur_ind1] += EST0_TO_LNP1(y);
+
+    //printf("rrrrr %lf\n", yp[0]);
+    //printf("%f %f\n", slist[cur_ind0], slist[cur_ind1]);
+
+    #ifdef LISTFLIPPING
+    slist_alpha[cur_ind0] += EST0_TO_LNP0(alpha_cur * y);
+    slist_alpha[cur_ind1] += EST0_TO_LNP1(alpha_cur * y);
+    #endif // LISTFLIPPING
     //printf("%f %f %f %f\n", yp[0], EST0_TO_LNP0(y), -yp[0], EST0_TO_LNP1(y));
 
     
 #ifdef FLIPPING
-      // TODO: DIFFERENT FORMATS
-      lv_array_cur[cur_ind0].llrs[node_counter] = -yp[0];
-      lv_array_cur[cur_ind1].llrs[node_counter] = -yp[0];
+    // TODO: DIFFERENT FORMATS
+    lv_array_cur[cur_ind0].llrs[node_counter] = -yp[0];
+    lv_array_cur[cur_ind1].llrs[node_counter] = -yp[0];
 #endif // FLIPPING
   }
+
+  #ifdef LISTFLIPPING
+  Malpha_cur[node_counter] = -INF;
+  #endif // LISTFLIPPING
 
 #ifdef DBG
   print_list("b");
 #endif
 
   // Partition and cut the list.
-  if (cur_lsiz > peak_lsiz) {
+  if (cur_lsiz > peak_lsiz) { 
+    #ifdef LISTFLIPPING
+    /*if (node_counter == fstep) {
+      printf("begin");
+      for (i = 0; i < cur_lsiz; i++) {
+        printf("%f ", slist[lorder[i]]);
+      }
+      printf("\n");
+    }*/
+    qpartition(lorder, cur_lsiz, peak_lsiz);
+    ALPHA_CALC(slist_alpha, lorder, peak_lsiz, cur_lsiz, Malpha_cur, node_counter);
+    if (node_counter != fstep) {
+      while (cur_lsiz > peak_lsiz) frind[--frindp] = lorder[--cur_lsiz];
+    }
+    else {
+      //qpartition_reverse(lorder, cur_lsiz, cur_lsiz - peak_lsiz); // TODO: speed
+      //printf("begin %d\n", cur_lsiz);
+      for (i = 0; i < peak_lsiz; ++i) frind[--frindp] = lorder[i];
+      for (i = peak_lsiz; i < cur_lsiz; ++i) lorder[i - peak_lsiz] = lorder[i];
+      cur_lsiz = peak_lsiz;
+      /*printf("end\n");
+      for (i = 0; i < cur_lsiz; i++) {
+        printf("%f ", slist[lorder[i]]);
+      }
+      printf("\n");*/
+    }
+    #endif // LISTFLIPPING
+    #ifndef LISTFLIPPING
     qpartition(lorder, cur_lsiz, peak_lsiz);
     while (cur_lsiz > peak_lsiz) frind[--frindp] = lorder[--cur_lsiz];
+    #endif // LISTFLIPPING
   }
 
   for (i = 0; i < cur_lsiz; i++) {
@@ -298,6 +367,10 @@ void polar0_skip(
 #ifdef FLIPPING
     lv_array_cur[cur_ind0].llrs[node_counter] = -yp[0];
 #endif // FLIPPING
+
+#ifdef LISTFLIPPING
+    Malpha_cur[node_counter] = -INF;
+#endif // LISTFLIPPING
     yp = YLISTP(cur_ind0, 0) = YLIST_POP(0);
     yp[0] = YLDEC0;
   }
@@ -442,7 +515,10 @@ polar_dec(
    int *x_dec, // Decoded information sequence.
    double *s_dec, // Metric of x_dec (set NULL, if not needed).
    lv *lv_array, // Comparator value + llrs.
-   int Ti // Index of the flipping bit.
+   int Ti, // Index of the flipping bit.
+   int Si, // Index of the flipping step.
+   double alpha, // SCLFlip constant.
+   double* Malpha // List of alphas.
 )
 {
   int i, j, i1;
@@ -526,6 +602,15 @@ polar_dec(
   fbit = Ti;
 #endif // FLIPPING
 
+#ifdef LISTFLIPPING
+  Malpha_cur = (double *)mem_buf_ptr;
+  mem_buf_ptr += c_n * sizeof(double);
+  fstep = Si;
+  alpha_cur = alpha;
+  slist_alpha = (slitem *)mem_buf_ptr;
+  mem_buf_ptr += flsiz * sizeof(slitem);
+#endif // LISTFLIPPING
+
 #ifdef DBG2
   printf("\nAssigned buffer size: %ld\n", mem_buf_ptr - dd->mem_buf);
 #endif
@@ -545,10 +630,15 @@ polar_dec(
   // Branch with permutations at (c_m, c_m).
   // List size is going to be dd->p_num.
   // All path metrics are 0 so far.
-  //for (i = 0; i < 1024; i++) printf("%f ", y_in[i]);
-  //printf("\n");
+  
+  /*printf("1024\n");
+  for (i = 0; i < 1024; i++) printf("%f ", y_in[i]);
+  printf("\n");*/
   for (i = 0; i < dd->p_num; i++) {
     slist[i] = 0.0;
+    #ifdef LISTFLIPPING
+    slist_alpha[i] = 0.0;
+    #endif // LISTFLIPPING
     lorder[i] = i;
     lind2xl[i] = xlist;
     p1 = dd->pyarr + c_n * i;
@@ -558,7 +648,8 @@ polar_dec(
       //vp[j] = XOR_EST(y_in[p1[2*j]], y_in[p1[2*j + 1]]);
       vp[j] = XOR_EST(y_in[p1[j]], y_in[p1[j + n2]]);
     }
-    /*for (j = 0; j < n2; j++) printf("%f ", vp[j]);
+    /*printf("512\n");
+    for (j = 0; j < n2; j++) printf("%f ", vp[j]);
     printf("\n");*/
     plist[i] = i;
   }
@@ -620,6 +711,9 @@ polar_dec(
       memcpy(lv_array[i].llrs, lv_array_cur[lorder[i]].llrs, c_n * sizeof(double));
       lv_array[i].l = slist[lorder[i]];
 #endif // FLIPPING
+#ifdef LISTFLIPPING
+      memcpy(Malpha, Malpha_cur, c_n * sizeof(double));
+#endif // LISTFLIPPING
     }
 
   }

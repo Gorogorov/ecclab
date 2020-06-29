@@ -29,6 +29,7 @@
 // Includes.
 
 #include "../common/std_defs.h"
+//#include <stdio.h>
 
 //-----------------------------------------------------------------------------
 // Defines
@@ -83,6 +84,16 @@
 
 // if (y == YLDEC0) return e; else return INV_EST(e);
 #define EST_XOR_YLDEC(e, y) ((e) * (y))
+
+#ifdef LISTFLIPPING
+#define ALPHA_CALC(s, indx, start, end, malpha, ind_alpha) { \
+    int i; \
+    malpha[ind_alpha] = 0; \
+    for (i = start; i < end; i++) { \
+        malpha[ind_alpha] += exp(s[indx[i]]); \
+    } \
+} 
+#endif // LISTFLIPPING
 
 //-----------------------------------------------------------------------------
 // List items typedefs.

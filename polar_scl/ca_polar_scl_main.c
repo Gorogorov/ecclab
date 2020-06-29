@@ -81,6 +81,10 @@ int get_membuf_size(decoder_type *dd) {
 #ifdef FLIPPING
    mem_buf_size += flsiz * sizeof(lv) + flsiz * dd->c_n * sizeof(double); // lv_array_cur
 #endif // FLIPPING
+#ifdef LISTFLIPPING
+  mem_buf_size += dd->c_n * sizeof(double); // Malpha_cur
+  mem_buf_size += flsiz * sizeof(slitem); // slist_alpha
+#endif // LISTFLIPPING
    return mem_buf_size;
 }
 
@@ -190,6 +194,72 @@ int get_best_in_list(
 
   return best_ind;
 }
+
+#ifdef LISTFLIPPING
+int check_crc_list(
+  int *x,
+  int x_len,
+  int lsiz,
+  int *crc,
+  int crc_len
+) {
+  int *curx, *tmp = NULL;
+  int s, best_ind;
+  int sum_len = x_len + crc_len;
+  int i, j;
+
+  if (crc_len <= 0) {
+    return -1;
+  }
+
+  best_ind = -1;
+  for (i = 0; i < lsiz; i++) {
+    curx = x + i * sum_len;
+    tmp = malloc_calc_crc(curx, x_len, crc, crc_len, tmp);
+    if (tmp == NULL) {
+      return -1;
+    }
+    s = 0;
+    for (j = 0; j < crc_len; j++) {
+      s += curx[x_len + j] ^ tmp[x_len - crc_len + j];
+    }
+    if (s == 0) {
+      best_ind = i;
+      break;
+    }
+  }
+
+  free(tmp);
+
+  return best_ind;
+}
+
+void find_alpha_indices(double *Malpha, int* node_table, int c_n, int T, int *res) {
+   double *tmp;
+   int i, j, max_ind;
+   double cur_max, min_alpha;
+   tmp = (double *) malloc(sizeof(double) * c_n);
+   memcpy(tmp, Malpha, sizeof(double) * c_n);
+   min_alpha = tmp[0];
+   for (i = 1; i < c_n; i++) {
+      min_alpha = fmin(min_alpha, tmp[i]);
+   }
+   for (j = 0; j < T; j++) {
+      cur_max = min_alpha-1;
+      max_ind = 0;
+      for (i = 0; i < c_n; i++) {
+         if (node_table[i] && cur_max < tmp[i]) {
+            cur_max = tmp[i];
+            max_ind = i;
+         }
+      }
+      res[j] = max_ind;
+      tmp[max_ind] = min_alpha - 1; 
+   }
+   free(tmp);
+   return;
+}
+#endif // LISTFLIPPING
 
 #ifdef FLIPPING
 int check_crc(
@@ -348,6 +418,7 @@ cdc_init(
       if (strcmp(token, "ca_polar_crc") == 0) {
          token = strtok(NULL, tk_seps_prepared);
          dd->crc_len = strlen(token);
+         //dd->crc_len = strlen(token) + 1;
          dd->crc = (int *)malloc(dd->crc_len * sizeof(int));
          if (dd->crc == NULL) {
             err_msg("cdc_init: Short of memory.");
@@ -355,6 +426,9 @@ cdc_init(
          }
          for (i = 0; i < dd->crc_len; i++)
             dd->crc[i] = (token[i] == '0') ? 0 : 1;
+         //for (i = 0; i < dd->crc_len-1; i++)
+         //   dd->crc[i] = (token[i] == '0') ? 0 : 1;
+         //dd->crc[dd->crc_len - 1] = 1;
          token = strtok(NULL, tk_seps_prepared);
          continue;
       }
@@ -420,6 +494,7 @@ cdc_init(
    dd->c_n = dd->dc.c_n = c_n = 1 << c_m;
    dd->c_k = dd->dc.c_k = c_k = get_k_from_node_table(c_n, dd->dc.node_table);
    dd->eff_k = c_k - dd->crc_len;
+   //dd->eff_k = c_k - dd->crc_len + 1;
    dd->dc.ret_list = (dd->crc_len > 0) ? 1 : 0;
    for (i = 0; i < dd->dc.node_table_len; i++)
       dd->dc.node_table[i] = (dd->dc.node_table[i] == 0) ? 0 : dd->dc.peak_lsiz;
@@ -633,7 +708,7 @@ dec_bpsk(
    for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i] * dd->sg22;
 
    if (dd->dc.ret_list) {
-      polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1);
+      polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1, -1, -1, NULL);
       best_ind = get_best_in_list(x_candidates, dd->eff_k, dd->dc.peak_lsiz, dd->crc, dd->crc_len);
 #ifdef DBG
       printf("best_ind: %d\n", best_ind);
@@ -641,7 +716,7 @@ dec_bpsk(
       memcpy(x_dec, x_candidates + best_ind * dd->c_k, dd->eff_k * sizeof(int));
    }
    else {
-      polar_dec(&(dd->dc), dec_input, x_dec, NULL, NULL, -1);
+      polar_dec(&(dd->dc), dec_input, x_dec, NULL, NULL, -1, -1, -1, NULL);
    }
 
    free(mem_buf);
@@ -707,14 +782,14 @@ dec_bpsk_flipping(
    // dec_input <-- 2 * c_out / sg^2.
    for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i] * dd->sg22;
    //for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i];
-   polar_dec(&(dd->dc), dec_input, x_dec, NULL, lv_array, -1);
+   polar_dec(&(dd->dc), dec_input, x_dec, NULL, lv_array, -1, -1, -1, NULL);
 #ifdef RETURNLLRS
    print_dec_info(dd, x_dec, lv_array);
 #endif // RETURNLLRS
    if (T > 0 && check_crc(x_dec, dd->eff_k, 1, dd->crc, dd->crc_len)) {
       find_lr_indices(lv_array->llrs, dd->dc.node_table, dd->c_n, T, lrdec);
       for (i = 0; i < T; i++) {
-         polar_dec(&(dd->dc), dec_input, x_dec, NULL, lv_array, lrdec[i]);
+         polar_dec(&(dd->dc), dec_input, x_dec, NULL, lv_array, lrdec[i], -1, -1, NULL);
          if (!check_crc(x_dec, dd->eff_k, 1, dd->crc, dd->crc_len)) {
             break;
          }
@@ -729,3 +804,89 @@ dec_bpsk_flipping(
    return 0;
 }
 #endif // FLIPPING
+
+#ifdef LISTFLIPPING
+int
+dec_bpsk_list_flipping(
+   void *cdc,
+   double c_out[],
+   int x_dec[],
+   int T,
+   double alpha
+)
+{
+   cdc_inst_type *dd;
+   double *dec_input, *Malpha;
+   int *x_candidates, *Malpha_maxs;
+   uint8 *mem_buf, *mem_buf_ptr;
+   int mem_buf_size;
+   int i, j, best_ind;
+   double d1;
+
+   dd = (cdc_inst_type *)cdc;
+
+   mem_buf_size = dd->c_n * sizeof(double); // dec_input
+   mem_buf_size += dd->dc.peak_lsiz * dd->c_k * sizeof(int); // x_candidates
+   mem_buf_size += dd->c_n * sizeof(double); // Malpha
+   mem_buf_size += T * sizeof(int); // Malpha_maxs
+
+   mem_buf = (uint8 *)malloc(mem_buf_size);
+   if (mem_buf == NULL) {
+      err_msg("dec_bpsk: Short of memory.");
+      return -1;
+   }
+   mem_buf_ptr = mem_buf;
+
+   dec_input = (double *)mem_buf_ptr;
+   mem_buf_ptr += dd->c_n * sizeof(double);
+
+   x_candidates = (int *)mem_buf_ptr;
+   mem_buf_ptr += dd->dc.peak_lsiz * dd->c_k * sizeof(int);
+
+   Malpha = (double *)mem_buf_ptr;
+   mem_buf_ptr += dd->c_n * sizeof(double);
+
+   Malpha_maxs = (int *)mem_buf_ptr;
+   mem_buf_ptr += T * sizeof(int);
+
+   // dec_input <-- 2 * c_out / sg^2.
+   for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i] * dd->sg22;
+   //for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i];
+   polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1, -1, alpha, Malpha);
+   best_ind = check_crc_list(x_candidates, dd->eff_k, dd->dc.peak_lsiz, dd->crc, dd->crc_len);
+   //printf("best %d\n", best_ind);
+   /*for (i = 0; i < dd->dc.peak_lsiz; i++) {
+      int cnt = 0, j = 0;
+      while (cnt < dd->c_n) {
+         printf("%d ", cnt);
+         if (dd->dc.node_table[cnt]) {
+            printf("%d\n", x_candidates[i * dd->dc.peak_lsiz + j]);
+            j++;
+         }
+         else {
+            printf("f f\n");
+         }
+         cnt++;
+      }
+      printf("\n---\n---\n---\n");
+   }*/
+   if (best_ind != -1) {
+      memcpy(x_dec, x_candidates + best_ind * dd->c_k, dd->eff_k * sizeof(int));
+   }
+   else {
+      find_alpha_indices(Malpha, dd->dc.node_table, dd->c_n, T, Malpha_maxs);
+      for (i = 0; i < T; i++) {
+         polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1, Malpha_maxs[i], alpha, Malpha);
+         best_ind = check_crc_list(x_candidates, dd->eff_k, dd->dc.peak_lsiz, dd->crc, dd->crc_len);
+         if (best_ind != -1) {
+            memcpy(x_dec, x_candidates + best_ind * dd->c_k, dd->eff_k * sizeof(int));
+            break;
+         }
+      }
+   }
+
+   free(mem_buf);
+
+   return 0;
+}
+#endif // LISTFLIPPING

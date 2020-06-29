@@ -73,7 +73,10 @@ polar_dec(
   int *x_dec, // Decoded information sequence.
   double *s_dec, // Metric of x_dec (set NULL, if not needed).
   lv *lv_array, // Comparator value + llrs.
-  int T // Index of the flipping bit.
+  int T, // Index of the flipping bit.
+  int Si, // Index of the flipping step.
+  double alpha, // SCLFlip constant.
+  double* Malpha // List of alphas.
 );
 
 #endif // #ifndef POLAR_SCL_INNER_H

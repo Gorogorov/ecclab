@@ -324,7 +324,24 @@ int sim_run(
          // Generate random or zero code word.
          if (sim->use_rndcw) {
             for (i = 0; i < c_k; i++) x[i] = (RND > 0.5) ? 1 : 0;
+
+            /*FILE* file2 = fopen("./u.csv", "r");
+            int cntt = 0;
+            int rrr2 = 0;
+            char tr;
+            fscanf(file2, "%c", &tr);
+
+            while (!feof (file2))
+               {  
+                  fscanf (file2, "%d", &rrr2);  
+                  x[cntt] = rrr2;
+                  cntt++;
+               }
+            fclose (file2);*/
+
+            //for (i = 0; i < c_k; i++) x[i] = 0;
             enc_bpsk(sim->dc_inst, x, c_in);
+            //for (i = 0; i < c_n; i++) printf("%d %f\n", i, c_in[i]);
          }
          else {
             for (i = 0; i < c_k; i++) x[i] = 0;
@@ -359,26 +376,38 @@ int sim_run(
          }
          #endif // FLIPPING
 
-         #ifndef FLIPPING
+         #ifdef LISTFLIPPING
+         if (dec_bpsk_list_flipping(sim->dc_inst, c_out, x_dec, 0, 0.375)) {
+            err_msg("sim_run(): Error while decoding.");
+            return -1;
+         }
+         #endif // LISTFLIPPING
+
+         #if !defined FLIPPING && !defined LISTFLIPPING
          if (dec_bpsk(sim->dc_inst, c_out, x_dec)) {
             err_msg("sim_run(): Error while decoding.");
             return -1;
          }
-         #endif // FLIPPING
+         #endif // !FLIPPING && !LISTFLIPPING
 
          // Count the number of incorrect information bits.
          en = 0;
          for (i = 0; i < c_k; i++) if (x_dec[i] != x[i]) en++;
          // Adjust error counters.
+         /*printf("a\n");
+            for (int www = 0; www < 1024; www++){
+               printf("%f\n", c_out[www]);
+            }
+         printf("\n");*/
          if (en) {
             /*printf("a\n");
             for (int www = 0; www < 1024; www++){
                printf("%f\n", c_out[www]);
             }
             printf("\n");*/
-            /*printf("decoded:\n");
+            /*printf("x\n");
             for (int www = 0; www < c_k; www++){
-               printf("%d", x_dec[www]);
+               printf("%d\n", x[www]);
             }
             printf("\n");*/
             sim->en_bit[csnrn] += en;

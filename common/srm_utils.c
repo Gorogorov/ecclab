@@ -290,6 +290,7 @@ int smrm_par0_enc_bsc_p(
    ku = smrm_par0_enc_bsc_p(m - 1, (r == m) ? r - 1 : r, node_table, x + kv, y + n2);
    
    for (i = 0; i < n2; i++) y[i] ^= y[i + n2];
+   //for (i = 0; i < n2; i++) y[i] = y[2*i] ^ y[2*i + 1];
 
    return kv + ku;
 }
@@ -325,6 +326,9 @@ int smrm_par0_enc_bpsk(
       err_msg("smrm_par0_enc_bpsk(): short of memory.");
       return 1;
    }
+   /*printf("coding\n");
+   for (i = 0; i < n; i++) printf("%d ", x[i]);
+   printf("\n");*/
    smrm_par0_enc_bsc(m, r, node_table, x, c);
    for (i = 0; i < n; i++) y[i] = (double)((c[i] << 1) - 1);
    free(c);

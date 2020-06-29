@@ -76,6 +76,15 @@ dec_bpsk_flipping(
    int Ti
 );
 
+int
+dec_bpsk_list_flipping(
+   void *cdc,
+   double c_out[],
+   int xd[],
+   int Ti,
+   double alpha
+);
+
 void
 cdc_close(
    void *cdc
