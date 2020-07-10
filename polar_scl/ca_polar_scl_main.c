@@ -51,6 +51,13 @@ typedef struct {
    int *crc;
    int crc_len;
    int csnrn;
+   #ifdef LISTFLIPPING
+   int flip_num;
+   double flip_alpha;
+   #endif // LISTFLIPPING
+   #ifdef LISTFLIPPINGPRECALC
+   int flip_num;
+   #endif
    double sg22; // 2 / sg^2 for calculation of epsilons.
    int lsiz[VARL_NUM_MAX];
 } cdc_inst_type;
@@ -195,7 +202,7 @@ int get_best_in_list(
   return best_ind;
 }
 
-#ifdef LISTFLIPPING
+#if defined LISTFLIPPING || defined LISTFLIPPINGPRECALC
 int check_crc_list(
   int *x,
   int x_len,
@@ -233,7 +240,9 @@ int check_crc_list(
 
   return best_ind;
 }
+#endif 
 
+#ifdef LISTFLIPPING
 void find_alpha_indices(double *Malpha, int* node_table, int c_n, int T, int *res) {
    double *tmp;
    int i, j, max_ind;
@@ -469,6 +478,31 @@ cdc_init(
          continue;
       }
 
+      #ifdef LISTFLIPPING
+      if (strcmp(token, "flips") == 0) {
+         token = strtok(NULL, tk_seps_prepared);
+         dd->dc.flip_num = atoi(token);
+         token = strtok(NULL, tk_seps_prepared);
+         continue;
+      }
+
+      if (strcmp(token, "alpha") == 0) {
+         token = strtok(NULL, tk_seps_prepared);
+         dd->dc.flip_alpha = atof(token);
+         token = strtok(NULL, tk_seps_prepared);
+         continue;
+      }
+      #endif // LISTFLIPPING
+
+      #ifdef LISTFLIPPINGPRECALC
+      if (strcmp(token, "flips") == 0) {
+         token = strtok(NULL, tk_seps_prepared);
+         dd->dc.flip_num = atoi(token);
+         token = strtok(NULL, tk_seps_prepared);
+         continue;
+      }
+      #endif
+
       SPF_SKIP_UNKNOWN_PARAMETER(token);
    }
 
@@ -498,6 +532,15 @@ cdc_init(
    dd->dc.ret_list = (dd->crc_len > 0) ? 1 : 0;
    for (i = 0; i < dd->dc.node_table_len; i++)
       dd->dc.node_table[i] = (dd->dc.node_table[i] == 0) ? 0 : dd->dc.peak_lsiz;
+
+   #ifdef LISTFLIPPING
+   dd->flip_num = dd->dc.flip_num;
+   dd->flip_alpha = dd->dc.flip_alpha;
+   #endif // LISTFLIPPING
+
+   #ifdef LISTFLIPPINGPRECALC
+   dd->flip_num = dd->dc.flip_num;
+   #endif
 
    // Generate permutations.
    // TODO: Permutations.
@@ -622,6 +665,28 @@ int cdc_get_k(void *cdc)
    dd = (cdc_inst_type *)cdc;
    return dd->eff_k;
 }
+
+#if defined LISTFLIPPING || defined LISTFLIPPINGPRECALC
+int cdc_get_flip_num(void *cdc) 
+{
+   cdc_inst_type *dd;
+
+   if (cdc == NULL) return 0;
+   dd = (cdc_inst_type *)cdc;
+   return dd->flip_num;
+}
+#endif
+
+#ifdef LISTFLIPPING
+double cdc_get_flip_alpha(void *cdc) 
+{
+   cdc_inst_type *dd;
+
+   if (cdc == NULL) return 0;
+   dd = (cdc_inst_type *)cdc;
+   return dd->flip_alpha;
+}
+#endif // LISTFLIPPING
 
 void
 cdc_set_sg(
@@ -812,7 +877,10 @@ dec_bpsk_list_flipping(
    double c_out[],
    int x_dec[],
    int T,
-   double alpha
+   double alpha,
+   int *var1,
+   int *var2,
+   int *var3
 )
 {
    cdc_inst_type *dd;
@@ -879,6 +947,15 @@ dec_bpsk_list_flipping(
          polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1, Malpha_maxs[i], alpha, Malpha);
          best_ind = check_crc_list(x_candidates, dd->eff_k, dd->dc.peak_lsiz, dd->crc, dd->crc_len);
          if (best_ind != -1) {
+
+            for (j = 0; j < T; j++) {
+               var1[Malpha_maxs[j]]++;
+            }
+            for (j = 0; j < i; j++) {
+               var2[Malpha_maxs[j]]++;
+            }
+            var3[Malpha_maxs[i]]++;
+
             memcpy(x_dec, x_candidates + best_ind * dd->c_k, dd->eff_k * sizeof(int));
             break;
          }
@@ -890,3 +967,177 @@ dec_bpsk_list_flipping(
    return 0;
 }
 #endif // LISTFLIPPING
+
+#ifdef LISTFLIPPINGPRECALC
+int
+dec_bpsk_list_flipping_precalc(
+   void *cdc,
+   double c_out[],
+   int x_dec[],
+   int T
+)
+{
+   cdc_inst_type *dd;
+   double *dec_input, *Malpha;
+   int *x_candidates, *Malpha_maxs;
+   uint8 *mem_buf, *mem_buf_ptr;
+   int mem_buf_size;
+   int i, j, best_ind, freq;
+   double d1;
+   FILE* precalc_bits;
+
+   dd = (cdc_inst_type *)cdc;
+
+   mem_buf_size = dd->c_n * sizeof(double); // dec_input
+   mem_buf_size += dd->dc.peak_lsiz * dd->c_k * sizeof(int); // x_candidates
+   mem_buf_size += dd->c_n * sizeof(double); // Malpha
+   mem_buf_size += T * sizeof(int); // Malpha_maxs
+
+   mem_buf = (uint8 *)malloc(mem_buf_size);
+   if (mem_buf == NULL) {
+      err_msg("dec_bpsk: Short of memory.");
+      return -1;
+   }
+   mem_buf_ptr = mem_buf;
+
+   dec_input = (double *)mem_buf_ptr;
+   mem_buf_ptr += dd->c_n * sizeof(double);
+
+   x_candidates = (int *)mem_buf_ptr;
+   mem_buf_ptr += dd->dc.peak_lsiz * dd->c_k * sizeof(int);
+
+   Malpha = (double *)mem_buf_ptr;
+   mem_buf_ptr += dd->c_n * sizeof(double);
+
+   Malpha_maxs = (int *)mem_buf_ptr;
+   mem_buf_ptr += T * sizeof(int);
+
+   // dec_input <-- 2 * c_out / sg^2.
+   for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i] * dd->sg22;
+   //for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i];
+   polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1, -1, -1, NULL);
+   best_ind = check_crc_list(x_candidates, dd->eff_k, dd->dc.peak_lsiz, dd->crc, dd->crc_len);
+   //printf("best %d\n", best_ind);
+   /*for (i = 0; i < dd->dc.peak_lsiz; i++) {
+      int cnt = 0, j = 0;
+      while (cnt < dd->c_n) {
+         printf("%d ", cnt);
+         if (dd->dc.node_table[cnt]) {
+            printf("%d\n", x_candidates[i * dd->dc.peak_lsiz + j]);
+            j++;
+         }
+         else {
+            printf("f f\n");
+         }
+         cnt++;
+      }
+      printf("\n---\n---\n---\n");
+   }*/
+   if (best_ind != -1) {
+      memcpy(x_dec, x_candidates + best_ind * dd->c_k, dd->eff_k * sizeof(int));
+   }
+   else {
+      precalc_bits = fopen("./precalc_bits/precalc_polar10_ca24_k512_L8.spf", "r");
+      i = 0;
+      while (!feof (precalc_bits)) {
+         if (i == T) break;
+         fscanf(precalc_bits, "%d %d", &Malpha_maxs[i], &freq);
+         i++;
+      }
+      fclose(precalc_bits);
+      for (i = 0; i < T; i++) {
+         polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1, Malpha_maxs[i], -1, NULL);
+         best_ind = check_crc_list(x_candidates, dd->eff_k, dd->dc.peak_lsiz, dd->crc, dd->crc_len);
+         if (best_ind != -1) {
+            memcpy(x_dec, x_candidates + best_ind * dd->c_k, dd->eff_k * sizeof(int));
+            break;
+         }
+      }
+   }
+
+   free(mem_buf);
+
+   return 0;
+}
+#endif // LISTFLIPPINGPRECALC
+
+#ifdef FLIPPINGW2
+int
+dec_bpsk_flippingw2(
+   void *cdc,
+   double c_out[],
+   int x_dec[],
+   int T1,
+   int T21,
+   int T22,
+   double alpha
+)
+{
+   cdc_inst_type *dd;
+   double *dec_input;
+   int *x_candidates, *lrdec;
+   uint8 *mem_buf, *mem_buf_ptr;
+   int mem_buf_size;
+   int i, j;
+   double d1;
+   int flsiz;
+   lv *lv_array = NULL;
+
+   dd = (cdc_inst_type *)cdc;
+
+   if (dd->dc.peak_lsiz != 1) {
+      err_msg("L != 1 for flipping");
+      return -1;
+   }
+
+   mem_buf_size = dd->c_n * sizeof(double); // dec_input
+   if (dd->dc.ret_list) {
+      mem_buf_size += dd->c_k * sizeof(int); // x_candidates
+   }
+   flsiz = MAX(1, dd->dc.p_num) * FLSIZ_MULT;
+   mem_buf_size += sizeof(lv) + dd->c_n * sizeof(double); // lv
+   mem_buf_size += T * sizeof(int);
+   mem_buf = (uint8 *)malloc(mem_buf_size);
+   if (mem_buf == NULL) {
+      err_msg("dec_bpsk: Short of memory.");
+      return -1;
+   }
+   mem_buf_ptr = mem_buf;
+
+   dec_input = (double *)mem_buf_ptr;
+   mem_buf_ptr += dd->c_n * sizeof(double);
+
+   if (dd->dc.ret_list) {
+      x_candidates = (int *)mem_buf_ptr;
+      mem_buf_ptr += dd->c_k * sizeof(int);
+   }
+
+   lv_array = (lv *)mem_buf_ptr;
+   mem_buf_ptr += sizeof(lv);
+   lv_array[0].llrs = (double *)mem_buf_ptr;
+   mem_buf_ptr += dd->c_n * sizeof(double);
+   lrdec = (int *)mem_buf_ptr;
+   mem_buf_ptr += T * sizeof(int);
+
+   // dec_input <-- 2 * c_out / sg^2.
+   for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i] * dd->sg22;
+   //for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i];
+   polar_dec(&(dd->dc), dec_input, x_dec, NULL, lv_array, -1, -1, -1, NULL, inv_ar);
+   if (T > 0 && check_crc(x_dec, dd->eff_k, 1, dd->crc, dd->crc_len)) {
+      find_lr_indices(lv_array->llrs, dd->dc.node_table, dd->c_n, T, lrdec);
+      for (i = 0; i < T; i++) {
+         polar_dec(&(dd->dc), dec_input, x_dec, NULL, lv_array, lrdec[i], -1, -1, NULL);
+         if (!check_crc(x_dec, dd->eff_k, 1, dd->crc, dd->crc_len)) {
+            break;
+         }
+      }
+   }
+#ifdef RETURNLLRS
+   print_dec_info(dd, x_dec, lv_array);
+#endif // RETURNLLRS
+
+   free(mem_buf);
+
+   return 0;
+}
+#endif // FLIPPINGW2

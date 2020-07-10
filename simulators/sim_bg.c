@@ -83,6 +83,13 @@ typedef struct {
    int do_ml_hd; // If 1 evaluate ML LB for hard dec. decoder.
    int enml_bl[SNR_NUM_MAX];
    int enml_bl_saved[SNR_NUM_MAX];
+   #ifdef LISTFLIPPING
+   int flip_num;
+   double flip_alpha;
+   #endif // LISTFLIPPING
+   #ifdef LISTFLIPPINGPRECALC
+   int flip_num;
+   #endif
 } sim_bg_inst;
 
 //-----------------------------------------------------------------------------
@@ -230,6 +237,12 @@ int sim_init(
 
    sim->code_n = cdc_get_n(sim->dc_inst);
    sim->code_k = cdc_get_k(sim->dc_inst);
+   #if defined LISTFLIPPING || defined LISTFLIPPINGPRECALC
+   sim->flip_num = cdc_get_flip_num(sim->dc_inst);
+   #endif
+   #ifdef LISTFLIPPING
+   sim->flip_alpha = cdc_get_flip_alpha(sim->dc_inst);
+   #endif
 
    // Check if all necessary parameters are specified.
    if ((sim->code_n == 0) || (sim->code_k == 0)) {
@@ -317,6 +330,9 @@ int sim_run(
       cdc_set_sg(sim->dc_inst, noise_sg);
 #endif // DEC_NEEDS_SIGMA
 
+      int *var1 = malloc(sizeof(int) * c_n), *var2 = malloc(sizeof(int) * c_n), *var3 = malloc(sizeof(int) * c_n);
+      for (i = 0; i < c_n; i++) var1[i] = var2[i] = var3[i] = 0;
+
       while (sim->trn[csnrn] < sim->trn_req[csnrn]) {
          
          sim->trn[csnrn]++;
@@ -377,18 +393,32 @@ int sim_run(
          #endif // FLIPPING
 
          #ifdef LISTFLIPPING
-         if (dec_bpsk_list_flipping(sim->dc_inst, c_out, x_dec, 0, 0.375)) {
+         if (dec_bpsk_list_flipping(sim->dc_inst, c_out, x_dec, sim->flip_num, sim->flip_alpha, var1, var2, var3)) {
             err_msg("sim_run(): Error while decoding.");
             return -1;
          }
          #endif // LISTFLIPPING
 
-         #if !defined FLIPPING && !defined LISTFLIPPING
+         #ifdef LISTFLIPPINGPRECALC
+         if (dec_bpsk_list_flipping_precalc(sim->dc_inst, c_out, x_dec, sim->flip_num)) {
+            err_msg("sim_run(): Error while decoding.");
+            return -1;
+         }
+         #endif // LISTFLIPPINGPRECALC
+
+         #ifdef FLIPPINGW2
+         if (dec_bpsk_list_flippingw2(sim->dc_inst, c_out, x_dec, 10, 20, 10, 0.375)) {
+            err_msg("sim_run(): Error while decoding.");
+            return -1;
+         }
+         #endif // FLIPPINGW2
+
+         #if !defined FLIPPING && !defined LISTFLIPPING && !defined FLIPPINGW2 && !defined LISTFLIPPINGPRECALC
          if (dec_bpsk(sim->dc_inst, c_out, x_dec)) {
             err_msg("sim_run(): Error while decoding.");
             return -1;
          }
-         #endif // !FLIPPING && !LISTFLIPPING
+         #endif // !FLIPPING && !LISTFLIPPING && !FLIPPINGW2 &&!LISTFLIPPINGPRECALC
 
          // Count the number of incorrect information bits.
          en = 0;
@@ -438,6 +468,20 @@ int sim_run(
       }
 
       sim->csnrn = ++csnrn;
+
+      /*for (i = 0; i < c_n; i++) {
+         printf("%d %d\n", i, var1[i]);
+      }
+      printf("\n");
+      for (i = 0; i < c_n; i++) {
+         printf("%d %d\n", i, var2[i]);
+      }
+      printf("\n");
+      for (i = 0; i < c_n; i++) {
+         printf("%d %d\n", i, var3[i]);
+      }
+      printf("\n");*/
+
    }
 
    free(c_out);

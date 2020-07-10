@@ -37,6 +37,8 @@ cdc_init(
 
 int cdc_get_n(void *cdc);
 int cdc_get_k(void *cdc);
+int cdc_get_flip_num(void *cdc);
+double cdc_get_flip_alpha(void *cdc);
 
 #ifdef DEC_NEEDS_CSNRN
 void
@@ -68,6 +70,7 @@ dec_bpsk(
    int xd[]
 );
 
+#ifdef FLIPPING
 int
 dec_bpsk_flipping(
    void *cdc,
@@ -75,15 +78,31 @@ dec_bpsk_flipping(
    int xd[],
    int Ti
 );
+#endif // FLIPPING
 
+#ifdef LISTFLIPPING
 int
 dec_bpsk_list_flipping(
    void *cdc,
    double c_out[],
    int xd[],
    int Ti,
-   double alpha
+   double alpha,
+   int *var1,
+   int *var2,
+   int *var3
 );
+#endif // LISTFLIPPING
+
+#ifdef LISTFLIPPINGPRECALC
+int
+dec_bpsk_list_flipping_precalc(
+   void *cdc,
+   double c_out[],
+   int x_dec[],
+   int T
+);
+#endif
 
 void
 cdc_close(

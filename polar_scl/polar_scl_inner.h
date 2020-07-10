@@ -46,6 +46,13 @@ typedef struct {
   int c_n; // Code length.
   int c_k; // Code dimension.
   int peak_lsiz; // Peak list size.
+  #ifdef LISTFLIPPING
+  int flip_num;
+  double flip_alpha;
+  #endif // LISTFLIPPING
+  #ifdef LISTFLIPPINGPRECALC
+  int flip_num;
+  #endif
   uint32 *node_table;
   int node_table_len;
   int p_num; // # of permutations.

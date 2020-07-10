@@ -34,7 +34,7 @@
 //-----------------------------------------------------------------------------
 // Internal defines.
 
-#define DEFAULT_RET_INT    10
+#define DEFAULT_RET_INT    90000000
 #define DEFAULT_SAVE_INT   600
 
 //-----------------------------------------------------------------------------
@@ -46,7 +46,7 @@ int main(int argc, char **argv) {
    void *sim_inst; // Simulation instance.
    char msg_str[10000]; // String buffer for messages.
    time_t start_time;
-   int save_int = DEFAULT_SAVE_INT;
+   int save_int = DEFAULT_SAVE_INT ;
    int i, rc;
 #ifdef WIN32
    char ch1;

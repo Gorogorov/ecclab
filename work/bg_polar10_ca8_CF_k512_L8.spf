@@ -1,21 +1,21 @@
-include codes/polar/polar10_ca8_CF_k512.txt
+include codes/polar/polar10_ca24_CF_k512.txt
 
 % Results file.
-res_file results/bg_polar6_ca6_CF_k32_L32_T20.srf
+res_file results/bg_polar10_ca6_CF_k512_test.srf
 
 % SNR values to simulate at.
 SNR_val_trn {
-%   0      3000
-%   0.5    7000
+%   0      10000
+%   0.5    10000
 %   1      10000
-%   1.5    10000
-%   2      10000
-%   2.5    20000
-%   3      100000
-%   3.5    200000
+%   1.5    50000
+   2      1000000
+%   2.5    1000000
+%   3      1000000
+%   3.5    10000000
 %   4      400000
 %   4.5    1600000
-   5      4000000
+%   5      4000000
 %   5.5    8000000
 %   6      6000000
 %   6.5    8000000
@@ -26,4 +26,8 @@ random_codeword on
 
 ml_lb on
 
-list_size 32
+list_size 8
+
+flips 512
+
+alpha 0.375

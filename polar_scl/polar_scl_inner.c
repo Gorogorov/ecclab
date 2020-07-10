@@ -106,6 +106,10 @@ slitem *slist_alpha;
 double alpha_cur;
 #endif // LISTFLIPPING
 
+#ifdef LISTFLIPPINGPRECALC
+int fstep;
+#endif
+
 //-----------------------------------------------------------------------------
 // Functions.
 
@@ -313,7 +317,20 @@ void polar0_branch(
       printf("\n");*/
     }
     #endif // LISTFLIPPING
-    #ifndef LISTFLIPPING
+
+    #ifdef LISTFLIPPINGPRECALC
+    qpartition(lorder, cur_lsiz, peak_lsiz);
+    if (node_counter != fstep) {
+      while (cur_lsiz > peak_lsiz) frind[--frindp] = lorder[--cur_lsiz];
+    }
+    else {
+      for (i = 0; i < peak_lsiz; ++i) frind[--frindp] = lorder[i];
+      for (i = peak_lsiz; i < cur_lsiz; ++i) lorder[i - peak_lsiz] = lorder[i];
+      cur_lsiz = peak_lsiz;
+    }
+    #endif
+
+    #if !defined LISTFLIPPING && !defined LISTFLIPPINGPRECALC
     qpartition(lorder, cur_lsiz, peak_lsiz);
     while (cur_lsiz > peak_lsiz) frind[--frindp] = lorder[--cur_lsiz];
     #endif // LISTFLIPPING
@@ -610,6 +627,10 @@ polar_dec(
   slist_alpha = (slitem *)mem_buf_ptr;
   mem_buf_ptr += flsiz * sizeof(slitem);
 #endif // LISTFLIPPING
+
+#ifdef LISTFLIPPINGPRECALC
+  fstep = Si;
+#endif
 
 #ifdef DBG2
   printf("\nAssigned buffer size: %ld\n", mem_buf_ptr - dd->mem_buf);
