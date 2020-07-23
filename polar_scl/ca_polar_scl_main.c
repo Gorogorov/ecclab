@@ -733,6 +733,62 @@ enc_bpsk(
    }
 }
 
+#ifdef GCCDEC
+int
+enc_bpsk_gcc(
+   void *cdc,
+   int x[],
+   double y[],
+   int *outer_matrix,
+   int *inner_matrix,
+   int out_cd_len,
+   int in_cd_len
+)
+{
+   cdc_inst_type *dd;
+   int i, j, k, in_vecs_len, node_ind;
+   int *in_vecs, *res;
+   
+   in_vecs_len = out_cd_len / in_cd_len;
+   dd = (cdc_inst_type *)cdc;
+   in_vecs = (int *)malloc(sizeof(int) * in_cd_len * in_vecs_len);
+   res = (int *)malloc(sizeof(int) * out_cd_len);
+   memset(in_vecs, 0, sizeof(int) * in_cd_len * in_vecs_len);
+   memset(res, 0, sizeof(int) * out_cd_len);
+
+   node_ind = 0;
+
+   if (dd->crc_len > 0) {
+      return -1;
+   }
+   else {
+      for (i = 0; i < in_cd_len; i++) {
+         for (j = 0; j < in_vecs_len; j++) {
+            if (!dd->dc.node_table[i * in_vecs_len + j]) continue;
+            for (k = 0; k < in_vecs_len; k++) {
+               in_vecs[i*in_vecs_len + k] ^= x[node_ind] * outer_matrix[(i*in_vecs_len + j) * out_cd_len + k];
+            }
+            node_ind++;
+         }
+      }
+      for (i = 0; i < in_vecs_len; i++) {
+         for (j = 0; j < in_cd_len; j++) {
+            for (k = 0; k < in_cd_len; k++) {
+               res[i + j * in_vecs_len] ^= in_vecs[k * in_vecs_len + i] * inner_matrix[k * in_cd_len + j];
+            }
+         }
+      }
+   }
+   for (i = 0; i < out_cd_len; i++) {
+      if (res[i]) y[i] = 1.0;
+      else y[i] = -1.0;
+   }
+   free(in_vecs);
+   free(res);
+   return 0;
+}
+#endif // GCCDEC
+
 int
 dec_bpsk(
    void *cdc,
@@ -846,7 +902,6 @@ dec_bpsk_flipping(
 
    // dec_input <-- 2 * c_out / sg^2.
    for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i] * dd->sg22;
-   //for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i];
    polar_dec(&(dd->dc), dec_input, x_dec, NULL, lv_array, -1, -1, -1, NULL);
 #ifdef RETURNLLRS
    print_dec_info(dd, x_dec, lv_array);
@@ -919,25 +974,8 @@ dec_bpsk_list_flipping(
 
    // dec_input <-- 2 * c_out / sg^2.
    for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i] * dd->sg22;
-   //for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i];
    polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1, -1, alpha, Malpha);
    best_ind = check_crc_list(x_candidates, dd->eff_k, dd->dc.peak_lsiz, dd->crc, dd->crc_len);
-   //printf("best %d\n", best_ind);
-   /*for (i = 0; i < dd->dc.peak_lsiz; i++) {
-      int cnt = 0, j = 0;
-      while (cnt < dd->c_n) {
-         printf("%d ", cnt);
-         if (dd->dc.node_table[cnt]) {
-            printf("%d\n", x_candidates[i * dd->dc.peak_lsiz + j]);
-            j++;
-         }
-         else {
-            printf("f f\n");
-         }
-         cnt++;
-      }
-      printf("\n---\n---\n---\n");
-   }*/
    if (best_ind != -1) {
       memcpy(x_dec, x_candidates + best_ind * dd->c_k, dd->eff_k * sizeof(int));
    }
@@ -1014,25 +1052,8 @@ dec_bpsk_list_flipping_precalc(
 
    // dec_input <-- 2 * c_out / sg^2.
    for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i] * dd->sg22;
-   //for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i];
    polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1, -1, -1, NULL);
    best_ind = check_crc_list(x_candidates, dd->eff_k, dd->dc.peak_lsiz, dd->crc, dd->crc_len);
-   //printf("best %d\n", best_ind);
-   /*for (i = 0; i < dd->dc.peak_lsiz; i++) {
-      int cnt = 0, j = 0;
-      while (cnt < dd->c_n) {
-         printf("%d ", cnt);
-         if (dd->dc.node_table[cnt]) {
-            printf("%d\n", x_candidates[i * dd->dc.peak_lsiz + j]);
-            j++;
-         }
-         else {
-            printf("f f\n");
-         }
-         cnt++;
-      }
-      printf("\n---\n---\n---\n");
-   }*/
    if (best_ind != -1) {
       memcpy(x_dec, x_candidates + best_ind * dd->c_k, dd->eff_k * sizeof(int));
    }
@@ -1061,6 +1082,7 @@ dec_bpsk_list_flipping_precalc(
 }
 #endif // LISTFLIPPINGPRECALC
 
+// It doesn't work
 #ifdef FLIPPINGW2
 int
 dec_bpsk_flippingw2(
@@ -1141,3 +1163,178 @@ dec_bpsk_flippingw2(
    return 0;
 }
 #endif // FLIPPINGW2
+
+#ifdef GCCDEC
+
+#define INF (1e10)
+
+int MLDec(double *llrs, int llrs_len, int *node_table, int *cdc_size, int *gen_mat, int *x_dec) {
+   double best_dist, cur_dist;
+   int i, j, k, word, *codeword, best_word, cur_dec_ind;
+   codeword = (int *)malloc(sizeof(int) * cdc_size[1]);
+
+   best_dist = -INF;
+   word = 0, best_word = 0;
+
+   for (i = 0; i < pow(2, cdc_size[0]); i++) {
+      memset(codeword, 0, sizeof(int) * cdc_size[1]);
+      for (j = 0; j < cdc_size[0]; j++) {
+         if (((word >> j) & 1)) {
+            for (k = 0; k < cdc_size[1]; k++) {
+               codeword[k] ^= gen_mat[j * cdc_size[1] + k];
+            }
+         }
+      }
+
+      cur_dist = 0;
+      for (j = 0; j < llrs_len; j++) {
+         cur_dist += -(2 * codeword[j] - 1) * llrs[j];
+      }
+      if (cur_dist > best_dist) {
+         best_dist = cur_dist;
+         best_word = word;
+      }
+      word++;
+   }
+   
+   memset(codeword, 0, sizeof(int) * cdc_size[1]);
+   for (j = 0; j < cdc_size[0]; j++) {
+      if (((best_word >> j) & 1)) {
+         for (k = 0; k < cdc_size[1]; k++) {
+            codeword[k] ^= gen_mat[j * cdc_size[1] + k];
+         }
+      }
+   }
+
+   for (i = 0; i < cdc_size[0]; i++) {
+      x_dec[i] = ((best_word >> i) & 1);
+   }
+   
+
+   free(codeword);
+   return 0;
+}
+
+int SyndrDec(double *llrs, int llrs_len, int *node_table, int *cdc_size, int *gen_mat, int *x_dec, int ***grid) {
+   double **grid_metric;
+   int i, j, k, cur_symb, *dec_codeword;
+   dec_codeword = (int *)malloc(sizeof(int) * llrs_len);
+   grid_metric = (double **)malloc(sizeof(double *) * 4);
+   for (i = 0; i < 4; i++) {
+      grid_metric[i] = (double *)malloc(sizeof(double) * 33);
+      for (j = 0; j < 33; j++) {
+         grid_metric[i][j] = -INF;
+      }
+   }
+   grid_metric[0][0] = 0;
+   for (i = 1; i < 33; i++) {
+      for (j = 0; j < 4; j++) {
+         if (grid[j][i][4]) {
+            for (k = 0; k < 4; k++) {
+               if (grid[j][i][k] && k == j) {
+                  grid_metric[j][i] = fmax(grid_metric[j][i], grid_metric[k][i-1]+llrs[i-1]);
+               }
+               else if (grid[j][i][k] && k != j) {
+                  grid_metric[j][i] = fmax(grid_metric[j][i], grid_metric[k][i-1]-llrs[i-1]);
+               }
+
+            }
+         }
+      }
+   }
+   cur_symb = 0;
+   for (i = 32; i > 0; i--) {
+      for (k = 0; k < 4; k++) {
+         if (grid[cur_symb][i][k]) {
+            if (k == cur_symb && grid_metric[k][i-1] + llrs[i-1] == grid_metric[cur_symb][i]) {
+               dec_codeword[i - 1] = 0;
+               break;
+            }
+            else if (k != cur_symb && grid_metric[k][i-1] - llrs[i-1] == grid_metric[cur_symb][i]) {
+               dec_codeword[i - 1] = 1;
+               cur_symb = k;
+               break;
+            }
+         }
+      }
+   }
+
+   for (i = 0; i < 32; i++) {
+      x_dec[i] = dec_codeword[i];
+   }
+
+   free(dec_codeword);
+   for (i = 0; i < 4; i++) {
+      free(grid_metric[i]);
+   }
+   free(grid_metric);
+   
+   return 0;
+}
+
+double llr_f(double a, double b) {
+   if (b > 0) return a > 0 ? fmin(fabs(a), fabs(b)) : -fmin(fabs(a), fabs(b));
+   else return a < 0 ? fmin(fabs(a), fabs(b)) : -fmin(fabs(a), fabs(b));
+}
+
+int
+dec_bpsk_gcc(
+   void *cdc,
+   double c_out[],
+   int x_dec[],
+   int *inner_matrix_inv,
+   int in_cd_len,
+   int out_cd_len,
+   int *cdc_opts,
+   int *cdc_sizes,
+   int **cdc_mats,
+   int ***grid4
+)
+{
+   cdc_inst_type *dd;
+   double *in_dec_input, *out_dec_input;
+   int i, j, k, in_vecs_len, cur_pos_dec;
+
+   dd = (cdc_inst_type *)cdc;
+
+   in_dec_input = (double *)malloc(sizeof(double) * out_cd_len);
+   out_dec_input = (double *)malloc(sizeof(double) * out_cd_len);
+
+   for (i = 0; i < dd->c_n; i++) in_dec_input[i] = c_out[i] * dd->sg22;
+
+   in_vecs_len = out_cd_len / in_cd_len;
+
+   for (i = 0; i < out_cd_len; i++) {
+      out_dec_input[i] = INF;
+   }
+
+   for (i = 0; i < in_vecs_len; i++) {
+      for (j = 0; j < in_cd_len; j++) {
+         for (k = 0; k < in_cd_len; k++) {
+            if (inner_matrix_inv[j + k * in_cd_len] != 0){
+                out_dec_input[i + j * in_vecs_len] = llr_f(out_dec_input[i + j * in_vecs_len],
+                                                           in_dec_input[i + k * in_vecs_len]);
+            }
+         }
+      }
+   }
+
+   cur_pos_dec = 0;
+   for (i = 0; i < in_cd_len; i++) {
+      //if (i != 0) continue;
+      if (cdc_opts[i] == 0) {
+         MLDec(out_dec_input + i * in_vecs_len, in_vecs_len, dd->dc.node_table + i*in_vecs_len,
+               cdc_sizes + i*2, cdc_mats[i], x_dec + cur_pos_dec);
+         cur_pos_dec += cdc_sizes[2*i];
+      }
+      else if (cdc_opts[i] == 1) {
+         SyndrDec(out_dec_input + i * in_vecs_len, in_vecs_len, dd->dc.node_table + i*in_vecs_len,
+               cdc_sizes + i*2, cdc_mats[i], x_dec + cur_pos_dec, grid4);
+      }
+   }
+
+   free(in_dec_input);
+   free(out_dec_input);
+   return 0;
+}
+#endif // GCCDEC

@@ -63,6 +63,19 @@ enc_bpsk(
    double y[]
 );
 
+#ifdef GCCDEC
+int
+enc_bpsk_gcc(
+   void *cdc,
+   int x[],
+   double y[],
+   int *outer_code,
+   int *inner_code,
+   int out_cd_len,
+   int in_cd_len
+);
+#endif // GCCDEC
+
 int
 dec_bpsk(
    void *cdc,
@@ -103,6 +116,22 @@ dec_bpsk_list_flipping_precalc(
    int T
 );
 #endif
+
+#ifdef GCCDEC
+int
+dec_bpsk_gcc(
+   void *cdc,
+   double c_out[],
+   int x_dec[],
+   int *inner_matrix_inv,
+   int in_cd_len,
+   int out_cd_len,
+   int *cdc_opts,
+   int *cdc_sizes,
+   int **cdc_mats,
+   int ***grid4
+);
+#endif // GCCDEC
 
 void
 cdc_close(

@@ -200,24 +200,6 @@ void qpartition(int *v, int len, int k) {
   else qpartition(v + st, len - st, k - st);
 }
 
-/*#ifdef LISTFLIPPING
-void qpartition_reverse(int *v, int len, int k) {
-  int i, st, tmp;
-
-  for (st = i = 0; i < len - 1; i++) {
-    if (slist[v[i]] > slist[v[len - 1]]) continue;
-    SWAP(i, st);
-    st++;
-  }
-
-  SWAP(len - 1, st);
-
-  if (k == st) return;
-  if (st > k) qpartition(v, st, k);
-  else qpartition(v + st, len - st, k - st);
-}
-#endif // LISTFLIPPING*/
-
 // For qsort().
 static int lst_comp(const void *i, const void *j)
 {
@@ -248,7 +230,6 @@ void polar0_branch(
     cur_ind1 = branch(cur_ind0, lind2xl[cur_ind0], dd->ret_list);
 
     yp = YLISTP(cur_ind0, 0);
-    //printf("1 %f\n", yp[0]);
     if (CHECK_EST0(yp[0])) {
       y = yp[0];
       x = 0;
@@ -264,14 +245,10 @@ void polar0_branch(
     PUSHX(1 - x, cur_ind1);
     slist[cur_ind1] += EST0_TO_LNP1(y);
 
-    //printf("rrrrr %lf\n", yp[0]);
-    //printf("%f %f\n", slist[cur_ind0], slist[cur_ind1]);
-
     #ifdef LISTFLIPPING
     slist_alpha[cur_ind0] += EST0_TO_LNP0(alpha_cur * y);
     slist_alpha[cur_ind1] += EST0_TO_LNP1(alpha_cur * y);
     #endif // LISTFLIPPING
-    //printf("%f %f %f %f\n", yp[0], EST0_TO_LNP0(y), -yp[0], EST0_TO_LNP1(y));
 
     
 #ifdef FLIPPING
@@ -292,29 +269,15 @@ void polar0_branch(
   // Partition and cut the list.
   if (cur_lsiz > peak_lsiz) { 
     #ifdef LISTFLIPPING
-    /*if (node_counter == fstep) {
-      printf("begin");
-      for (i = 0; i < cur_lsiz; i++) {
-        printf("%f ", slist[lorder[i]]);
-      }
-      printf("\n");
-    }*/
     qpartition(lorder, cur_lsiz, peak_lsiz);
     ALPHA_CALC(slist_alpha, lorder, peak_lsiz, cur_lsiz, Malpha_cur, node_counter);
     if (node_counter != fstep) {
       while (cur_lsiz > peak_lsiz) frind[--frindp] = lorder[--cur_lsiz];
     }
     else {
-      //qpartition_reverse(lorder, cur_lsiz, cur_lsiz - peak_lsiz); // TODO: speed
-      //printf("begin %d\n", cur_lsiz);
       for (i = 0; i < peak_lsiz; ++i) frind[--frindp] = lorder[i];
       for (i = peak_lsiz; i < cur_lsiz; ++i) lorder[i - peak_lsiz] = lorder[i];
       cur_lsiz = peak_lsiz;
-      /*printf("end\n");
-      for (i = 0; i < cur_lsiz; i++) {
-        printf("%f ", slist[lorder[i]]);
-      }
-      printf("\n");*/
     }
     #endif // LISTFLIPPING
 
@@ -353,7 +316,6 @@ void polar0_branch(
       else
         yp[0] = YLDEC1;
       GETX(cur_ind1) = 1 - x;
-      //printf("%d %d\n", x, GETX(cur_ind1));
     }
 #endif // FLIPPING
   }
@@ -380,7 +342,6 @@ void polar0_skip(
     cur_ind0 = lorder[i];
     yp = YLISTP(cur_ind0, 0);
     slist[cur_ind0] += EST_TO_LNP0(yp[0]);
-    //printf("1 %lf\n", yp[0]);
 #ifdef FLIPPING
     lv_array_cur[cur_ind0].llrs[node_counter] = -yp[0];
 #endif // FLIPPING
