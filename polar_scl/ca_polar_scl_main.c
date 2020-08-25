@@ -55,7 +55,7 @@ typedef struct {
    int flip_num;
    double flip_alpha;
    #endif // LISTFLIPPING
-   #ifdef LISTFLIPPINGPRECALC
+   #if defined LISTFLIPPINGPRECALC || defined LISTFLIPPINGFAST
    int flip_num;
    #endif
    double sg22; // 2 / sg^2 for calculation of epsilons.
@@ -202,7 +202,7 @@ int get_best_in_list(
   return best_ind;
 }
 
-#if defined LISTFLIPPING || defined LISTFLIPPINGPRECALC
+#if defined LISTFLIPPING || defined LISTFLIPPINGPRECALC || defined LISTFLIPPINGFAST
 int check_crc_list(
   int *x,
   int x_len,
@@ -494,7 +494,7 @@ cdc_init(
       }
       #endif // LISTFLIPPING
 
-      #ifdef LISTFLIPPINGPRECALC
+      #if defined LISTFLIPPINGPRECALC || defined LISTFLIPPINGFAST
       if (strcmp(token, "flips") == 0) {
          token = strtok(NULL, tk_seps_prepared);
          dd->dc.flip_num = atoi(token);
@@ -538,7 +538,7 @@ cdc_init(
    dd->flip_alpha = dd->dc.flip_alpha;
    #endif // LISTFLIPPING
 
-   #ifdef LISTFLIPPINGPRECALC
+   #if defined LISTFLIPPINGPRECALC || defined LISTFLIPPINGFAST
    dd->flip_num = dd->dc.flip_num;
    #endif
 
@@ -666,7 +666,7 @@ int cdc_get_k(void *cdc)
    return dd->eff_k;
 }
 
-#if defined LISTFLIPPING || defined LISTFLIPPINGPRECALC
+#if defined LISTFLIPPING || defined LISTFLIPPINGPRECALC || defined LISTFLIPPINGFAST
 int cdc_get_flip_num(void *cdc) 
 {
    cdc_inst_type *dd;
@@ -733,7 +733,7 @@ enc_bpsk(
    }
 }
 
-#ifdef GCCDEC
+#if defined GCCDEC
 int
 enc_bpsk_gcc(
    void *cdc,
@@ -1082,43 +1082,30 @@ dec_bpsk_list_flipping_precalc(
 }
 #endif // LISTFLIPPINGPRECALC
 
-// It doesn't work
-#ifdef FLIPPINGW2
+#ifdef LISTFLIPPINGFAST
 int
-dec_bpsk_flippingw2(
+dec_bpsk_list_flipping_fast(
    void *cdc,
    double c_out[],
    int x_dec[],
-   int T1,
-   int T21,
-   int T22,
-   double alpha
+   int T,
+   int *Malpha_maxs
 )
 {
    cdc_inst_type *dd;
-   double *dec_input;
-   int *x_candidates, *lrdec;
+   double *dec_input, *Malpha;
+   int *x_candidates;
    uint8 *mem_buf, *mem_buf_ptr;
    int mem_buf_size;
-   int i, j;
+   int i, j, best_ind;
    double d1;
-   int flsiz;
-   lv *lv_array = NULL;
 
    dd = (cdc_inst_type *)cdc;
 
-   if (dd->dc.peak_lsiz != 1) {
-      err_msg("L != 1 for flipping");
-      return -1;
-   }
-
    mem_buf_size = dd->c_n * sizeof(double); // dec_input
-   if (dd->dc.ret_list) {
-      mem_buf_size += dd->c_k * sizeof(int); // x_candidates
-   }
-   flsiz = MAX(1, dd->dc.p_num) * FLSIZ_MULT;
-   mem_buf_size += sizeof(lv) + dd->c_n * sizeof(double); // lv
-   mem_buf_size += T * sizeof(int);
+   mem_buf_size += dd->dc.peak_lsiz * dd->c_k * sizeof(int); // x_candidates
+   mem_buf_size += dd->c_n * sizeof(double); // Malpha
+
    mem_buf = (uint8 *)malloc(mem_buf_size);
    if (mem_buf == NULL) {
       err_msg("dec_bpsk: Short of memory.");
@@ -1129,46 +1116,41 @@ dec_bpsk_flippingw2(
    dec_input = (double *)mem_buf_ptr;
    mem_buf_ptr += dd->c_n * sizeof(double);
 
-   if (dd->dc.ret_list) {
-      x_candidates = (int *)mem_buf_ptr;
-      mem_buf_ptr += dd->c_k * sizeof(int);
-   }
+   x_candidates = (int *)mem_buf_ptr;
+   mem_buf_ptr += dd->dc.peak_lsiz * dd->c_k * sizeof(int);
 
-   lv_array = (lv *)mem_buf_ptr;
-   mem_buf_ptr += sizeof(lv);
-   lv_array[0].llrs = (double *)mem_buf_ptr;
+   Malpha = (double *)mem_buf_ptr;
    mem_buf_ptr += dd->c_n * sizeof(double);
-   lrdec = (int *)mem_buf_ptr;
-   mem_buf_ptr += T * sizeof(int);
 
    // dec_input <-- 2 * c_out / sg^2.
    for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i] * dd->sg22;
-   //for (i = 0; i < dd->c_n; i++) dec_input[i] = c_out[i];
-   polar_dec(&(dd->dc), dec_input, x_dec, NULL, lv_array, -1, -1, -1, NULL, inv_ar);
-   if (T > 0 && check_crc(x_dec, dd->eff_k, 1, dd->crc, dd->crc_len)) {
-      find_lr_indices(lv_array->llrs, dd->dc.node_table, dd->c_n, T, lrdec);
+   polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1, -1, -1, NULL);
+   best_ind = check_crc_list(x_candidates, dd->eff_k, dd->dc.peak_lsiz, dd->crc, dd->crc_len);
+   if (best_ind != -1) {
+      memcpy(x_dec, x_candidates + best_ind * dd->c_k, dd->eff_k * sizeof(int));
+   }
+   else {
       for (i = 0; i < T; i++) {
-         polar_dec(&(dd->dc), dec_input, x_dec, NULL, lv_array, lrdec[i], -1, -1, NULL);
-         if (!check_crc(x_dec, dd->eff_k, 1, dd->crc, dd->crc_len)) {
+         polar_dec(&(dd->dc), dec_input, x_candidates, NULL, NULL, -1, Malpha_maxs[i], -1, NULL);
+         best_ind = check_crc_list(x_candidates, dd->eff_k, dd->dc.peak_lsiz, dd->crc, dd->crc_len);
+         if (best_ind != -1) {
+            memcpy(x_dec, x_candidates + best_ind * dd->c_k, dd->eff_k * sizeof(int));
             break;
          }
       }
    }
-#ifdef RETURNLLRS
-   print_dec_info(dd, x_dec, lv_array);
-#endif // RETURNLLRS
 
    free(mem_buf);
 
    return 0;
 }
-#endif // FLIPPINGW2
+#endif // LISTFLIPPINGFAST
 
 #ifdef GCCDEC
 
 #define INF (1e10)
 
-int MLDec(double *llrs, int llrs_len, int *node_table, int *cdc_size, int *gen_mat, int *x_dec) {
+int MLDec(double *llrs, int llrs_len, int *node_table, int *cdc_size, int *gen_mat, int *x_dec, int *ret_codeword) {
    double best_dist, cur_dist;
    int i, j, k, word, *codeword, best_word, cur_dec_ind;
    codeword = (int *)malloc(sizeof(int) * cdc_size[1]);
@@ -1206,10 +1188,13 @@ int MLDec(double *llrs, int llrs_len, int *node_table, int *cdc_size, int *gen_m
       }
    }
 
+   for (k = 0; k < cdc_size[1]; k++) {
+      ret_codeword[k] = codeword[k];
+   }
+
    for (i = 0; i < cdc_size[0]; i++) {
       x_dec[i] = ((best_word >> i) & 1);
    }
-   
 
    free(codeword);
    return 0;
@@ -1272,10 +1257,89 @@ int SyndrDec(double *llrs, int llrs_len, int *node_table, int *cdc_size, int *ge
    return 0;
 }
 
-double llr_f(double a, double b) {
-   if (b > 0) return a > 0 ? fmin(fabs(a), fabs(b)) : -fmin(fabs(a), fabs(b));
-   else return a < 0 ? fmin(fabs(a), fabs(b)) : -fmin(fabs(a), fabs(b));
+double logsumexp(double *array, int len) {
+   int i;
+   double cur_max, sum;
+   cur_max = -INF;
+   for (i = 0; i < len; i++) {
+      if (array[i] > cur_max) {
+         cur_max = array[i];
+      }
+   }
+   sum = 0;
+   for (i = 0; i < len; i++) {
+      sum += exp(array[i] - cur_max);
+   }
+   sum /= len;
+   return log(sum) + cur_max;
 }
+
+void bcjr2(double *input, double sigma, int input_len, int *cdc_size, int *gen_mat, double *output, int *output_hard) {
+   int i, j, k, word, *codeword, best_word;
+   double *likelihood, Py, *apost, P0, P1, max_apost;
+   codeword = (int *)malloc(sizeof(int) * cdc_size[1]);
+   likelihood = (double *)malloc(sizeof(double) * pow(2, cdc_size[0]));
+   apost = (double *)malloc(sizeof(double) * pow(2, cdc_size[0]));
+   for (i = 0; i < pow(2, cdc_size[0]); i++) {
+      likelihood[i] = 0;
+   }
+
+   word = 0, Py = 0, best_word = 0, max_apost = -INF;
+
+   for (i = 0; i < pow(2, cdc_size[0]); i++) {
+      memset(codeword, 0, sizeof(int) * cdc_size[1]);
+      for (j = 0; j < cdc_size[0]; j++) {
+         if (((word >> j) & 1)) {
+            for (k = 0; k < cdc_size[1]; k++) {
+               codeword[k] ^= gen_mat[j * cdc_size[1] + k];
+            }
+         }
+      }
+      word++;
+      for (k = 0; k < cdc_size[1]; k++) {
+         codeword[k] = 1 - 2 * codeword[k];
+      }
+      for (j = 0; j < cdc_size[1]; j++) {
+         likelihood[i] += -log(sqrt(2*3.14)*sigma) - (pow(fabs(input[j] - codeword[j]), 2) / (2*sigma*sigma));
+      }
+   }
+   Py = logsumexp(likelihood, pow(2, cdc_size[0]));
+
+   for (i = 0; i < pow(2, cdc_size[0]); i++) {
+      apost[i] = likelihood[i] - Py - log(pow(2, cdc_size[0]));
+      if (apost[i] > max_apost) {
+         max_apost = apost[i];
+         best_word = i;
+      }
+   }
+   for (i = 0; i < cdc_size[0]; i++) {
+      word = 0;
+      P0 = P1 = 0;
+      for (j = 0; j < pow(2, cdc_size[0]); j++) {
+         if (((word >> (i)) & 1)) {
+            P1 += exp(apost[j]);
+         }
+         else {
+            P0 += exp(apost[j]);
+         }
+         word++;
+      }
+      output[i] = log(P0 / P1);
+   }
+   memset(codeword, 0, sizeof(int) * cdc_size[1]);
+   for (j = 0; j < cdc_size[0]; j++) {
+      if (((best_word >> j) & 1)) {
+         output_hard[j] = -1;
+      }
+      else {
+         output_hard[j] = 1;
+      }
+   }
+   free(codeword);
+   free(apost);
+   free(likelihood);
+}
+
 
 int
 dec_bpsk_gcc(
@@ -1288,53 +1352,97 @@ dec_bpsk_gcc(
    int *cdc_opts,
    int *cdc_sizes,
    int **cdc_mats,
-   int ***grid4
+   int ***grid4,
+   double *last_part_true_codeword
 )
 {
    cdc_inst_type *dd;
-   double *in_dec_input, *out_dec_input;
-   int i, j, k, in_vecs_len, cur_pos_dec;
+   double *in_dec_input, *out_dec_input, *inner_codeword, **inner_matrix_cds, *inner_dec_codeword;
+   int i, j, k, in_vecs_len, cur_pos_dec, *inner_matrix_size, *inner_matrix, *inner_dec_codeword_int, *ret_codeword;
+   in_vecs_len = out_cd_len / in_cd_len;
 
    dd = (cdc_inst_type *)cdc;
 
    in_dec_input = (double *)malloc(sizeof(double) * out_cd_len);
    out_dec_input = (double *)malloc(sizeof(double) * out_cd_len);
+   inner_codeword = (double *)malloc(sizeof(double) * in_cd_len);
+   inner_dec_codeword = (double *)malloc(sizeof(double) * in_cd_len);
+   inner_dec_codeword_int = (int *)malloc(sizeof(int) * in_cd_len);
+   inner_matrix_cds = (double **)malloc(sizeof(double *) * in_vecs_len);
+   inner_matrix_size = (int *)malloc(sizeof(int) * 2);
+   inner_matrix = (int *)malloc(sizeof(int) * in_cd_len * in_cd_len);
+   ret_codeword = (int *)malloc(sizeof(int) * 32);
+   for (i = 0; i < in_vecs_len; i++) {
+      inner_matrix_cds[i] = (double *)malloc(sizeof(double) * in_vecs_len);
+   }
 
    for (i = 0; i < dd->c_n; i++) in_dec_input[i] = c_out[i] * dd->sg22;
 
-   in_vecs_len = out_cd_len / in_cd_len;
-
-   for (i = 0; i < out_cd_len; i++) {
-      out_dec_input[i] = INF;
-   }
-
-   for (i = 0; i < in_vecs_len; i++) {
-      for (j = 0; j < in_cd_len; j++) {
-         for (k = 0; k < in_cd_len; k++) {
-            if (inner_matrix_inv[j + k * in_cd_len] != 0){
-                out_dec_input[i + j * in_vecs_len] = llr_f(out_dec_input[i + j * in_vecs_len],
-                                                           in_dec_input[i + k * in_vecs_len]);
-            }
-         }
+   for (i = 0; i < in_cd_len; i++) {
+      for (j = 0; j < in_vecs_len; j++) {
+         inner_matrix_cds[j][i] = in_dec_input[i*in_vecs_len + j];
       }
    }
 
    cur_pos_dec = 0;
    for (i = 0; i < in_cd_len; i++) {
-      //if (i != 0) continue;
+      for (j = i; j < in_cd_len; j++) {
+         for (k = 0; k < in_cd_len; k++) {
+            inner_matrix[(j-i) * in_cd_len + k] = inner_matrix_inv[j * in_cd_len + k];
+         }
+      }
+      inner_matrix_size[0] = in_cd_len - i;
+      inner_matrix_size[1] = in_cd_len;
+      for (j = 0; j < in_vecs_len; j++) {
+         for (k = 0; k < in_cd_len; k++) {
+            inner_codeword[k] = inner_matrix_cds[j][k];
+            inner_dec_codeword[k] = INF;
+         }
+         for (k = 0; k < in_cd_len; k++) {
+            inner_codeword[k] /= dd->sg22;
+         }
+         bcjr2(inner_codeword, sqrt(2.0 / dd->sg22), in_cd_len, inner_matrix_size, inner_matrix, inner_dec_codeword, inner_dec_codeword_int);
+         out_dec_input[i*in_vecs_len + j] = inner_dec_codeword[0];
+         if (inner_dec_codeword_int[0] == -1) {
+            for (k = 0; k < in_cd_len; k++) {
+               if (inner_matrix[k]) {
+                  inner_matrix_cds[j][k] = -inner_matrix_cds[j][k];
+               }
+            }
+         }
+      }
       if (cdc_opts[i] == 0) {
          MLDec(out_dec_input + i * in_vecs_len, in_vecs_len, dd->dc.node_table + i*in_vecs_len,
-               cdc_sizes + i*2, cdc_mats[i], x_dec + cur_pos_dec);
+               cdc_sizes + i*2, cdc_mats[i], x_dec + cur_pos_dec, ret_codeword);
          cur_pos_dec += cdc_sizes[2*i];
       }
       else if (cdc_opts[i] == 1) {
          SyndrDec(out_dec_input + i * in_vecs_len, in_vecs_len, dd->dc.node_table + i*in_vecs_len,
-               cdc_sizes + i*2, cdc_mats[i], x_dec + cur_pos_dec, grid4);
+                  cdc_sizes + i*2, cdc_mats[i], x_dec + cur_pos_dec, grid4);
+      }
+      for (j = 0; j < in_vecs_len; j++) {
+         if ((1 - 2 * ret_codeword[j]) * out_dec_input[i * in_vecs_len + j] < 0) {
+            for (k = 0; k < in_cd_len; k++) {
+               if (inner_matrix[k]) {
+                  inner_matrix_cds[j][k] = -inner_matrix_cds[j][k];
+               }
+            }
+         }
       }
    }
 
    free(in_dec_input);
    free(out_dec_input);
+   free(inner_codeword);
+   free(inner_dec_codeword);
+   free(inner_dec_codeword_int);
+   free(inner_matrix_size);
+   free(inner_matrix);
+   for (i = 0; i < in_vecs_len; i++) {
+      free(inner_matrix_cds[i]);
+   }
+   free(inner_matrix_cds);
+   free(ret_codeword);
    return 0;
 }
-#endif // GCCDEC
+#endif

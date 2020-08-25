@@ -117,6 +117,17 @@ dec_bpsk_list_flipping_precalc(
 );
 #endif
 
+#ifdef LISTFLIPPINGFAST
+int
+dec_bpsk_list_flipping_fast(
+   void *cdc,
+   double c_out[],
+   int x_dec[],
+   int T,
+   int *Malpha_maxs
+);
+#endif
+
 #ifdef GCCDEC
 int
 dec_bpsk_gcc(
@@ -129,7 +140,8 @@ dec_bpsk_gcc(
    int *cdc_opts,
    int *cdc_sizes,
    int **cdc_mats,
-   int ***grid4
+   int ***grid4,
+   double *last_part_true_codeword
 );
 #endif // GCCDEC
 

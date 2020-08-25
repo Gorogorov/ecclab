@@ -23,8 +23,13 @@
 //-----------------------------------------------------------------------------
 // Defines
 
+#if !defined LISTFLIPPINGFAST
 #define FLSIZ_MULT 4
+#endif
 
+#ifdef LISTFLIPPINGFAST
+#define FLSIZ_MULT 64
+#endif
 
 //-----------------------------------------------------------------------------
 // Includes.
@@ -50,7 +55,7 @@ typedef struct {
   int flip_num;
   double flip_alpha;
   #endif // LISTFLIPPING
-  #ifdef LISTFLIPPINGPRECALC
+  #if defined LISTFLIPPINGPRECALC || defined LISTFLIPPINGFAST
   int flip_num;
   #endif
   uint32 *node_table;
