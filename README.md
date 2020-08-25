@@ -157,6 +157,13 @@ This is `dtrm_glp` codec tailored for Polar codes. The difference is that we sta
 and decompose everything down to (0, 0) nodes. When no CRC is given, the decoder outputs the remaining candidate
 with the best metric as `dtrm_glp` would do. When CRC is set, the decoder picks the best candidate with the correct CRC.
 
+Keys:
+-DFLIPPING - SCL with flipping bits
+-DLISTFLIPPING - SCLFlip
+-DLISTFLIPPINGPRECALC - SCLFlip with precalc bits
+-DLISTFLIPPINGFAST - SCLFlip with precalc bits and fast calculations for subcodes
+-DGCCDEC - Generalized concatenated codes for (128, 64) code.
+
 Specific simulation parameters:
 * `c_m m` - Polar m parameter. Integer, positive, non-zero. Required.
 * `info_bits_mask mask_str` - mask marking frozen information bits
@@ -164,6 +171,9 @@ Specific simulation parameters:
 * `ca_polar_crc poly_str` - coefficients of the CRC polynomial starting from higher powers, no leading 1.
 Binary string. No CRC is used by default.
 * `list_size L` - list size. Integer, positive, non-zero. Required.
+* `flips f` - number of flipping bits. Integer, non-negative. Required for FLIPPING, LISTFLIPPING, LISTFLIPPINGPRECALC, LISTFLIPPINGFAST
+* `alpha a` - a constant for obtaining metric in LISTFLIPPING algorithm. Double. Required for LISTFLIPPING 
+
 
 ## References
 * E. Arikan, “Channel Polarization: A Method for Constructing Capacity-Achieving Codes for Symmetric Binary-Input Memoryless Channels,”
