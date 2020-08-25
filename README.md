@@ -158,11 +158,11 @@ and decompose everything down to (0, 0) nodes. When no CRC is given, the decoder
 with the best metric as `dtrm_glp` would do. When CRC is set, the decoder picks the best candidate with the correct CRC.
 
 Keys:
--DFLIPPING - SCL with flipping bits
--DLISTFLIPPING - SCLFlip
--DLISTFLIPPINGPRECALC - SCLFlip with precalc bits
--DLISTFLIPPINGFAST - SCLFlip with precalc bits and fast calculations for subcodes
--DGCCDEC - Generalized concatenated codes for (128, 64) code.
+* `-DFLIPPING` - SCL with flipping bits
+* `-DLISTFLIPPING` - SCLFlip
+* `-DLISTFLIPPINGPRECALC` - SCLFlip with precalc bits
+* `-DLISTFLIPPINGFAST` - SCLFlip with precalc bits and fast calculations for subcodes
+* `-DGCCDEC` - Generalized concatenated codes for (128, 64) code.
 
 Specific simulation parameters:
 * `c_m m` - Polar m parameter. Integer, positive, non-zero. Required.
