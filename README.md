@@ -162,7 +162,7 @@ Keys:
 * `-DLISTFLIPPING` - SCLFlip
 * `-DLISTFLIPPINGPRECALC` - SCLFlip with precalc bits
 * `-DLISTFLIPPINGFAST` - SCLFlip with precalc bits and fast calculations for subcodes
-* `-DGCCDEC` - Generalized concatenated codes for (128, 64) code.
+* `-DGCCDEC` - Generalized Concatenated decoder for (128, 64) code.
 
 Specific simulation parameters:
 * `c_m m` - Polar m parameter. Integer, positive, non-zero. Required.
