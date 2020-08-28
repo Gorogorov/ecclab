@@ -28,7 +28,7 @@
 #endif
 
 #ifdef LISTFLIPPINGFAST
-#define FLSIZ_MULT 64
+#define FLSIZ_MULT 1000
 #endif
 
 //-----------------------------------------------------------------------------

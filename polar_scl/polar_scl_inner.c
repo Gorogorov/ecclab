@@ -155,6 +155,17 @@ void polar_transf_x(int listInd, xlitem *res_x, int n) {
     xle = xle->p;
   }
 }
+
+void polar_transf_x_spc(int listInd, xlitem *res_x, int n) {
+  int i;
+  polar_transform_mat(res_x, n);
+  lind2xl[listInd] = lind2xl[listInd]->p;
+  xlist_item *xle = lind2xl[listInd];
+  for (i = 0; i < n - 1; i++) {
+    xle->x = res_x[n - i - 1];
+    xle = xle->p;
+  }
+}
 #endif
 
 int branch(int i0, xlist_item *xle0, int ret_list) {
@@ -543,6 +554,212 @@ void DecRate1(decoder_type *dd, int m, int n, int peak_lsiz) {
   free(x_tmp);
 }
 
+void DecRepCode(decoder_type *dd, int m, int n, int peak_lsiz) {
+  int cur_lsiz_old = cur_lsiz;
+  int i, j, cur_ind0, cur_ind1;
+  ylitem *yp1, *yp;
+  xlitem *x_tmp;
+  double sum_rate;
+
+  x_tmp = (xlitem *)malloc(sizeof(xlitem));
+
+  for (i = 0; i < cur_lsiz_old; i++) {
+    cur_ind0 = lorder[i];
+    yp1 = YLISTP(cur_ind0, m);
+    sum_rate = 0;
+    for (j = 0; j < n; j++) {
+      if (yp1[j] < 0) sum_rate += yp1[j];
+    }
+    parent[cur_ind0] = -1;
+    cur_ind1 = branch(cur_ind0, lind2xl[cur_ind0], dd->ret_list);
+    slist[cur_ind0] += sum_rate;
+    sum_rate = 0;
+    for (j = 0; j < n; j++) {
+      if (yp1[j] > 0) sum_rate -= yp1[j];
+    }
+    slist[cur_ind1] += sum_rate;
+    PUSHX(0, cur_ind0);
+    PUSHX(1, cur_ind1);
+  }
+
+  // Partition and cut the list.
+  if (cur_lsiz > peak_lsiz) { 
+
+    qpartition(lorder, cur_lsiz, peak_lsiz);
+    if (node_counter > fstep || node_counter + n <= fstep) {
+      while (cur_lsiz > peak_lsiz) frind[--frindp] = lorder[--cur_lsiz];
+    }
+    else {
+      for (i = 0; i < peak_lsiz; ++i) frind[--frindp] = lorder[i];
+      for (i = peak_lsiz; i < cur_lsiz; ++i) lorder[i - peak_lsiz] = lorder[i];
+      cur_lsiz -= peak_lsiz;
+    }
+  }
+  for (i = 0; i < cur_lsiz; i++) {
+    cur_ind1 = lorder[i];
+    cur_ind0 = parent[cur_ind1];
+    if (cur_ind0 >= 0) {
+      memcpy(YLISTPP(cur_ind1, m), YLISTPP(cur_ind0, m), dd->c_m * sizeof(ylitem *));
+    }
+    vgetx(cur_ind1, x_tmp, 1);
+    yp = YLISTP(cur_ind1, m) = YLIST_POP(m);
+    for (j = 0; j < n; j++) {
+      if (x_tmp[0]) yp[j] = YLDEC1;
+      else yp[j] = YLDEC0;
+    }
+  }
+  free(x_tmp);
+}
+
+void DecSPCCode(decoder_type *dd, int m, int n, int peak_lsiz) {
+  int cur_lsiz_old = cur_lsiz;
+  int *cur_inds, *min_inds;
+  int i, j, k, cur_ind0, cur_ind1, main_inv;
+  ylitem *yp1, *yp;
+  int **words;
+  xlitem *x_tmp;
+  double logP, *mins;
+
+  cur_inds = (int *)malloc(sizeof(int) * 8);
+  min_inds = (int *)malloc(sizeof(int) * 4);
+  mins = (double *)malloc(sizeof(double) * 4);
+  words = malloc(sizeof(int *) * 8);
+  for (i = 0; i < 8; i++) {
+    words[i] = (int *)malloc(sizeof(int) * n);
+  }
+  x_tmp = (xlitem *)malloc(sizeof(xlitem) * n);
+
+  for (i = 0; i < cur_lsiz_old; i++) {
+    cur_inds[0] = lorder[i];
+    yp1 = YLISTP(cur_inds[0], m);
+    logP = 0;
+    for (j = 0; j < n; j++) {
+      logP += -log(1 + exp(-fabs(yp1[j])));
+    }
+    slist[cur_inds[0]] += logP;
+    parent[cur_inds[0]] = -1;
+    for (j = 1; j < 8; j++) cur_inds[j] = branch(cur_inds[0], lind2xl[cur_inds[0]], dd->ret_list);
+    main_inv = 0;
+    for (j = 0; j < n; j++) {
+      for (k = 0; k < 8; k++) {
+        if (yp1[j] < 0) {
+          words[k][j] = 1;
+        }
+        else words[k][j] = 0;
+      }
+      if (yp1[j] < 0) main_inv ^= 1;
+    }
+    for (j = 0; j < 4; j++) mins[j] = INF;
+    for (j = 0; j < n; j++) {
+      if (fabs(yp1[j]) < mins[0]) {
+        mins[3] = mins[2];
+        min_inds[3] = min_inds[2];
+        mins[2] = mins[1];
+        min_inds[2] = min_inds[1];
+        mins[1] = mins[0];
+        min_inds[1] = min_inds[0];
+        mins[0] = fabs(yp1[j]);
+        min_inds[0] = j;
+      }
+      else if (fabs(yp1[j]) < mins[1]) {
+        mins[3] = mins[2];
+        min_inds[3] = min_inds[2];
+        mins[2] = mins[1];
+        min_inds[2] = min_inds[1];
+        mins[1] = fabs(yp1[j]);
+        min_inds[1] = j;
+      }
+      else if (fabs(yp1[j]) < mins[2]) {
+        mins[3] = mins[2];
+        min_inds[3] = min_inds[2];
+        mins[2] = fabs(yp1[j]);
+        min_inds[2] = j;
+      }
+      else if (fabs(yp1[j]) < mins[3]) {
+        mins[3] = fabs(yp1[j]);
+        min_inds[3] = j;
+      }
+    }
+    if (main_inv) {
+      for (j = 0; j < 8; j++) {
+        words[j][min_inds[0]] ^= 1;
+        slist[cur_inds[j]] -= mins[0];
+      }
+      mins[0] = -mins[0];
+    }
+    // (1, 2), (1, 3), (1, 4), (2, 3), (2, 4), (3, 4)
+    words[1][min_inds[0]] ^= 1; words[1][min_inds[1]] ^= 1;
+    slist[cur_inds[1]] -= (mins[0] + mins[1]);
+
+    words[2][min_inds[0]] ^= 1; words[2][min_inds[2]] ^= 1;
+    slist[cur_inds[2]] -= (mins[0] + mins[2]);
+
+    words[3][min_inds[0]] ^= 1; words[3][min_inds[3]] ^= 1;
+    slist[cur_inds[3]] -= (mins[0] + mins[3]);
+
+    words[4][min_inds[1]] ^= 1; words[4][min_inds[2]] ^= 1;
+    slist[cur_inds[4]] -= (mins[1] + mins[2]);
+
+    words[5][min_inds[1]] ^= 1; words[5][min_inds[3]] ^= 1;
+    slist[cur_inds[5]] -= (mins[1] + mins[3]);
+
+    words[6][min_inds[2]] ^= 1; words[6][min_inds[3]] ^= 1;
+    slist[cur_inds[6]] -= (mins[2] + mins[3]);
+
+    words[7][min_inds[0]] ^= 1; words[7][min_inds[1]] ^= 1;
+    words[7][min_inds[2]] ^= 1; words[7][min_inds[3]] ^= 1;
+    slist[cur_inds[7]] -= (mins[0] + mins[1] + mins[2] + mins[3]);
+
+    for (j = 0; j < 8; j++) {
+      for (k = 0; k < n; k++) {
+        PUSHX(words[j][k], cur_inds[j]);
+      }
+    }
+  }
+
+  // Partition and cut the list.
+  if (cur_lsiz > peak_lsiz) { 
+
+    qpartition(lorder, cur_lsiz, peak_lsiz);
+    if (node_counter > fstep || node_counter + n <= fstep) {
+      while (cur_lsiz > peak_lsiz) frind[--frindp] = lorder[--cur_lsiz];
+    }
+    else {
+      for (i = 0; i < peak_lsiz; ++i) frind[--frindp] = lorder[i];
+      for (i = peak_lsiz; i < cur_lsiz; ++i) lorder[i - peak_lsiz] = lorder[i];
+      cur_lsiz -= peak_lsiz;
+      qpartition(lorder, cur_lsiz, peak_lsiz);
+      while (cur_lsiz > peak_lsiz) frind[--frindp] = lorder[--cur_lsiz];
+      cur_lsiz = peak_lsiz;
+    }
+  }
+
+  for (i = 0; i < cur_lsiz; i++) {
+    cur_ind1 = lorder[i];
+    cur_ind0 = parent[cur_ind1];
+    if (cur_ind0 >= 0) {
+      memcpy(YLISTPP(cur_ind1, m), YLISTPP(cur_ind0, m), dd->c_m * sizeof(ylitem *));
+    }
+    vgetx(cur_ind1, x_tmp, n);
+    yp = YLISTP(cur_ind1, m) = YLIST_POP(m);
+    for (j = 0; j < n; j++) {
+      if (x_tmp[j]) yp[j] = YLDEC1;
+      else yp[j] = YLDEC0;
+    }
+    polar_transf_x_spc(cur_ind1, x_tmp, n);
+    vgetx(cur_ind1, x_tmp, n-1);
+  }
+
+  free(cur_inds);
+  free(min_inds);
+  free(mins);
+  for (i = 0; i < 8; i++) {
+    free(words[i]);
+  }
+  free(words);
+  free(x_tmp);
+}
+
 #endif 
 
 void polar_dec_inner(
@@ -557,7 +774,7 @@ void polar_dec_inner(
   ylitem y1;
   int i, j;
   #ifdef LISTFLIPPINGFAST
-  int is_rate_0, is_rate_1;
+  int is_rate_0, is_rate_1, is_rep_code, is_spc_code;
   double sum_rate;
   #endif 
 
@@ -574,15 +791,31 @@ void polar_dec_inner(
 
   #ifdef LISTFLIPPINGFAST
   is_rate_0 = 1;
-  for (i = node_counter; i < node_counter + n; i++) {
+  is_rep_code = 1;
+  for (i = node_counter; i < node_counter + n - 1; i++) {
     if (node_table[i] != 0) {
       is_rate_0 = 0;
+      is_rep_code = 0;
     }
   }
+  if (node_table[node_counter + n - 1] == 0) {
+    is_rep_code = 0;
+  }
+  else {
+    is_rate_0 = 0;
+  }
   is_rate_1 = 1;
-  for (i = node_counter; i < node_counter + n; i++) {
+  is_spc_code = 1;
+  if (node_table[node_counter] == 0) {
+    is_rate_1 = 0;
+  }
+  else {
+    is_spc_code = 0;
+  }
+  for (i = node_counter + 1; i < node_counter + n; i++) {
     if (node_table[i] == 0) {
       is_rate_1 = 0;
+      is_spc_code = 0;
     }
   }
   if (is_rate_0) {
@@ -592,6 +825,16 @@ void polar_dec_inner(
   }
   if (is_rate_1) {
     DecRate1(dd, m, n, node_table[node_counter]);
+    node_counter += n;
+    return;
+  }
+  if (is_rep_code) {
+    DecRepCode(dd, m, n, node_table[node_counter + n - 1]);
+    node_counter += n;
+    return;
+  }
+  if (is_spc_code) {
+    DecSPCCode(dd, m, n, node_table[node_counter + n - 1]);
     node_counter += n;
     return;
   }
